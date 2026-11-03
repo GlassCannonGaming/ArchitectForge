@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "2.0.0",
+  "savedAt": "2026-11-03T13:26:32.292Z",
+  "category": "environment_3d",
+  "folderPath": "ArchitectForge_Workspace/assets/environment_3d",
+  "itemName": "Water-Stained Wainscot Wall [Pristine]",
+  "data": {
+    "id": "floor2_wall_nw_s",
+    "name": "Water-Stained Wainscot Wall [Pristine]",
+    "category": "wall",
+    "subType": "interior_plaster_wall",
+    "floor": "floor2",
+    "roomNumber": "Room 201",
+    "position": [
+      -5.2,
+      1.5,
+      -1.6
+    ],
+    "dimensions": [
+      3,
+      3,
+      0.3
+    ],
+    "rotationY": 0,
+    "color": "#8a8170",
+    "textureId": "plaster_cream",
+    "collidable": true,
+    "tags": [
+      "architecture",
+      "wall",
+      "plaster",
+      "wood",
+      "wainscot",
+      "suite",
+      "late-70s",
+      "pristine",
+      "audio-linked"
+    ],
+    "conditionVariant": "pristine",
+    "era": "1970s",
+    "predecessor1978Id": "interior_plaster_wall",
+    "soundPresetId": "brass_bell",
+    "paired1990sId": "interior_plaster_wall"
+  }
+}

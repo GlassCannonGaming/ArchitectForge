@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "2.0.0",
+  "savedAt": "2026-11-03T13:26:29.959Z",
+  "category": "interactions",
+  "folderPath": "ArchitectForge_Workspace/gameplay_logs/interactions",
+  "itemName": "Clara Vance_Evening",
+  "data": {
+    "id": "int_1793712389941",
+    "timestamp": "2026-11-03T13:26:29.941Z",
+    "gameTimeFormatted": "07:30 PM",
+    "phase": "Evening",
+    "timeOfDayEvent": "Lobby Lights Dimming & Parlor Social Hour (Wall sconces flickering)",
+    "dailyActionAtTime": "Listening to the cassette tape player and watching who enters the service stairwell. (West Parlor Lounge)",
+    "characterName": "Clara Vance",
+    "userMessage": "I brought the vintage jazz records and antique brass keys you mentioned.",
+    "agentReply": "*My shoulders drop, the sharp edge of my suspicion softening as I glance at the treasures in your hand.* Perhaps... perhaps I was too quick to judge your temperament, for the weight of these keys and the promise of a warm jazz record are enough to soothe even the most unsettled nerves in this drafty hotel. Behind the Room 202 fireplace wainscoting, there is a pivoted brass latch that opens directly into the hidden service shaft; just be careful, for the walls here hold secrets that prefer to remain buried in the dust.",
+    "gameDay": 1,
+    "trustDelta": 18,
+    "suspicionDelta": -12,
+    "resultingTrust": 74,
+    "resultingSuspicion": 16,
+    "resultingDisposition": "cordial",
+    "triggeredLikes": [
+      "antique brass keys",
+      "jazz records"
+    ],
+    "triggeredDislikes": [],
+    "answeredQuestionId": null,
+    "answeredQuestionFromDay": null,
+    "pendingQuestionAsked": null,
+    "unansweredQuestionDaysWaiting": 0,
+    "gameplayInfluenceSummary": "Mentioned liked topic (antique brass keys, jazz records) → Tenant warmed up to CORDIAL (Trust 74/100)",
+    "unlockedClueId": null
+  }
+}

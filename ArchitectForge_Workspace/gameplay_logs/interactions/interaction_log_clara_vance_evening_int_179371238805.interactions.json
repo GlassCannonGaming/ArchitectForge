@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "2.0.0",
+  "savedAt": "2026-11-03T13:26:28.055Z",
+  "category": "interactions",
+  "folderPath": "ArchitectForge_Workspace/gameplay_logs/interactions",
+  "itemName": "Clara Vance_Evening",
+  "data": {
+    "id": "int_1793712388051",
+    "timestamp": "2026-11-03T13:26:28.051Z",
+    "gameTimeFormatted": "07:30 PM",
+    "phase": "Evening",
+    "timeOfDayEvent": "Lobby Lights Dimming & Parlor Social Hour (Wall sconces flickering)",
+    "dailyActionAtTime": "Listening to the cassette tape player and watching who enters the service stairwell. (West Parlor Lounge)",
+    "characterName": "Clara Vance",
+    "userMessage": "Please accept my thanks — I brought polished brass keys and classic jazz cassettes for your ledger audit.",
+    "agentReply": "*I lean forward, the dim wall sconces casting long, flickering shadows across my face, and my expression softens from guarded to momentarily appreciative.* \n\n\"You have my genuine gratitude for the jazz records; they provide a much-needed melody to mask the hollow, rhythmic footsteps I heard echoing from behind the partition at 11:15 last night. Please, step closer and keep your voice to a whisper—I’ve discovered that the brass latch inside the 202 fireplace wall is indeed unbolted, suggesting something, or someone, has been moving through the dead space behind the plaster.\"",
+    "gameDay": 1,
+    "trustDelta": 24,
+    "suspicionDelta": -16,
+    "resultingTrust": 56,
+    "resultingSuspicion": 28,
+    "resultingDisposition": "wary",
+    "triggeredLikes": [
+      "courteous demeanor (\"please\")"
+    ],
+    "triggeredDislikes": [],
+    "answeredQuestionId": "pq_starter_202",
+    "answeredQuestionFromDay": 1,
+    "pendingQuestionAsked": null,
+    "unansweredQuestionDaysWaiting": 0,
+    "gameplayInfluenceSummary": "Answered tenant's pending question → Trust +24 | Mentioned liked topic (courteous demeanor (\"please\")) → Tenant warmed up to WARY (Trust 56/100)",
+    "unlockedClueId": null
+  }
+}

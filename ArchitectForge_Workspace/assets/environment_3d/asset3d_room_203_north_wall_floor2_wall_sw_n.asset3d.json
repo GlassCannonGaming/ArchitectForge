@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "2.0.0",
+  "savedAt": "2026-11-03T13:26:36.088Z",
+  "category": "environment_3d",
+  "folderPath": "ArchitectForge_Workspace/assets/environment_3d",
+  "itemName": "Room 203 North Wall",
+  "data": {
+    "id": "floor2_wall_sw_n",
+    "name": "Room 203 North Wall",
+    "category": "wall",
+    "subType": "interior_plaster_wall",
+    "floor": "floor2",
+    "roomNumber": "Room 203",
+    "position": [
+      -5.2,
+      1.5,
+      1.6
+    ],
+    "dimensions": [
+      6.8,
+      3,
+      0.3
+    ],
+    "rotationY": 0,
+    "color": "#8a8170",
+    "textureId": "plaster_cream",
+    "collidable": true,
+    "tags": [
+      "audio-linked"
+    ],
+    "soundPresetId": "telephone_ring"
+  }
+}

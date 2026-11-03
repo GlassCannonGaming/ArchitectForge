@@ -235,6 +235,53 @@ export default function App() {
     );
   }, []);
 
+  // Updates an agent's voice profile and tone from the Sound Board
+  const handleUpdateAgentVoiceProfile = useCallback(
+    (
+      agentId: string,
+      updates: {
+        prebuiltVoiceName: 'Puck' | 'Charon' | 'Kore' | 'Fenrir' | 'Zephyr';
+        vocalTone: string;
+        accent: string;
+        voiceSoundPresetId: string;
+      }
+    ) => {
+      setAgents((prev) =>
+        prev.map((ag) => {
+          if (ag.id !== agentId) return ag;
+          const updatedVoiceProfile = {
+            ...(ag.voiceProfile || {
+              prebuiltVoiceName: updates.prebuiltVoiceName,
+              vocalTone: updates.vocalTone,
+              accent: updates.accent,
+              cadenceStyle: 'Measured, deliberate pauses between clauses',
+              pitchMultiplier: 1.0,
+              speakingRate: 0.95,
+              baselineExpression: 'neutral' as const,
+              persistAcrossPlaythrough: true
+            }),
+            prebuiltVoiceName: updates.prebuiltVoiceName,
+            vocalTone: updates.vocalTone,
+            accent: updates.accent
+          };
+          return {
+            ...ag,
+            voiceStyle: `${updates.vocalTone} (${updates.accent}) [Cue: ${updates.voiceSoundPresetId}]`,
+            voiceProfile: updatedVoiceProfile,
+            appearance: {
+              ...ag.appearance,
+              voiceProfile: updatedVoiceProfile
+            }
+          };
+        })
+      );
+      setStatusBanner(
+        `🎙️ Updated Tenant Voice Profile (${updates.prebuiltVoiceName} · "${updates.vocalTone}" · Cue: ${updates.voiceSoundPresetId})!`
+      );
+    },
+    []
+  );
+
   // Dynamically trigger the background loop of 'hotel ambience' (creaks, footsteps, whispers)
   // when the player enters a room with high suspicionLevel agents (>= suspicionAmbienceThreshold)
   useEffect(() => {
@@ -3533,6 +3580,12 @@ export default function App() {
                       setStatusBanner(
                         '🎵 3 · Sound Board Active — Create new sounds or assign specific sounds to 3D assets and blueprints!'
                       );
+                    } else if (tab.id === 'character') {
+                      handleToggleOpenWindow('audio', false);
+                      handleToggleOpenWindow('char_appearance', true);
+                      handleToggleOpenWindow('char_ai', true);
+                      handleFocusWindow('char_appearance');
+                      handleFocusWindow('char_ai');
                     } else {
                       handleToggleOpenWindow('audio', false);
                     }
@@ -3809,6 +3862,7 @@ export default function App() {
             suspicionAmbienceThreshold={suspicionAmbienceThreshold}
             onUpdateSuspicionThreshold={setSuspicionAmbienceThreshold}
             onUpdateAgentSuspicion={handleUpdateAgentSuspicion}
+            onUpdateAgentVoiceProfile={handleUpdateAgentVoiceProfile}
           />
         )}
 

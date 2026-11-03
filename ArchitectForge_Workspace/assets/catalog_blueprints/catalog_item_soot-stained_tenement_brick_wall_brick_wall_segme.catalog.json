@@ -1,6 +1,6 @@
 {
   "schemaVersion": "2.0.0",
-  "savedAt": "2026-11-01T16:21:08.221Z",
+  "savedAt": "2026-11-03T13:26:36.727Z",
   "category": "catalog_blueprints",
   "folderPath": "ArchitectForge_Workspace/assets/catalog_blueprints",
   "itemName": "Soot-Stained Tenement Brick Wall",
@@ -26,6 +26,6 @@
       "audio-linked"
     ],
     "description": "Load-bearing soot-darkened red-brick masonry partition with cracked mortar and scarred cornice trim.",
-    "soundPresetId": "brass_bell"
+    "soundPresetId": "telephone_ring"
   }
 }

@@ -130,7 +130,18 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
   );
   const flickerSpec = safeExecuteCatalogOrVariantCallback(
     () => computeUnkemptFlickerCssSpec(globalAnimationFps, primaryAsset.id),
-    { animationDurationSec: '0.5s', stepCount: 6, animationDelaySec: '0s', fps: globalAnimationFps },
+    {
+      isFlickering: true,
+      fps: globalAnimationFps,
+      steps: 6,
+      stepCount: 6,
+      durationSec: 0.5,
+      delaySec: 0,
+      animationDurationSec: '0.5s',
+      animationDelaySec: '0s',
+      className: 'unkempt-aged-flicker',
+      styleVars: {}
+    },
     'QuickEdit.computeUnkemptFlickerCssSpec'
   );
   const interactionState = safeExecuteCatalogOrVariantCallback(

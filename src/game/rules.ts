@@ -1820,7 +1820,7 @@ export function computeBuildPlacementPosition(params: {
           ? [params.dimensions[0], params.dimensions[1], params.dimensions[2]]
           : [1, 1, 1],
       color: '#ffffff',
-      textureId: 'wood_panels',
+      textureId: 'aged_brass',
       collidable: true
     };
 
@@ -10058,7 +10058,7 @@ export function swapAssetConditionVariant(
       rotationY: 0,
       dimensions: [1, 1, 1],
       color: '#736555',
-      textureId: 'wood_panels',
+      textureId: 'aged_brass',
       collidable: true,
       conditionVariant: safeVariant
     };

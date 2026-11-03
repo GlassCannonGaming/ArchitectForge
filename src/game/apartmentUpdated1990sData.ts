@@ -3693,7 +3693,9 @@ export function upgradeAssetTo1990sHotelVersion(
     color: targetBp.defaultColor,
     textureId: targetBp.defaultTexture,
     dimensions: nextDims,
-    compositeParts: targetBp.compositeParts ? targetBp.compositeParts.map((p) => ({ ...p })) : undefined,
+    compositeParts: targetBp.compositeParts
+      ? targetBp.compositeParts.map((p: CompositeSubPart) => ({ ...p }))
+      : undefined,
     soundPresetId: targetBp.soundPresetId || asset.soundPresetId,
     era: '1990s',
     conditionVariant: 'updated',
@@ -3753,7 +3755,9 @@ export function downgradeAssetTo1978Version(
     color: targetBp.defaultColor,
     textureId: targetBp.defaultTexture,
     dimensions: nextDims,
-    compositeParts: targetBp.compositeParts ? targetBp.compositeParts.map((p) => ({ ...p })) : undefined,
+    compositeParts: targetBp.compositeParts
+      ? targetBp.compositeParts.map((p: CompositeSubPart) => ({ ...p }))
+      : undefined,
     soundPresetId: targetBp.soundPresetId || asset.soundPresetId,
     era: '1970s',
     conditionVariant: targetBp.subType.endsWith('_unkempt') ? 'unkempt' : 'pristine',

@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "2.0.0",
+  "savedAt": "2026-11-03T13:26:27.250Z",
+  "category": "interactions",
+  "folderPath": "ArchitectForge_Workspace/gameplay_logs/interactions",
+  "itemName": "Clara Vance_Evening",
+  "data": {
+    "id": "int_1793712387246",
+    "timestamp": "2026-11-03T13:26:27.246Z",
+    "gameTimeFormatted": "07:30 PM",
+    "phase": "Evening",
+    "timeOfDayEvent": "Lobby Lights Dimming & Parlor Social Hour (Wall sconces flickering)",
+    "dailyActionAtTime": "Listening to the cassette tape player and watching who enters the service stairwell. (West Parlor Lounge)",
+    "characterName": "Clara Vance",
+    "userMessage": "You're a liar and a suspect! I know about the missing ledger pages and drafty airshafts!",
+    "agentReply": "*My expression tightens into a jagged, suspicious mask, and I pull my shoulders inward.* \"Your accusations are as misplaced as they are boorish, and I’ll thank you to keep your voice from echoing in these halls. I have nothing to say to a person who makes such wild, ugly claims, especially regarding things they know absolutely nothing about.\"",
+    "gameDay": 1,
+    "trustDelta": -28,
+    "suspicionDelta": 24,
+    "resultingTrust": 32,
+    "resultingSuspicion": 44,
+    "resultingDisposition": "cold",
+    "triggeredLikes": [],
+    "triggeredDislikes": [
+      "hostile tone (\"liar\")",
+      "hostile tone (\"suspect\")"
+    ],
+    "answeredQuestionId": null,
+    "answeredQuestionFromDay": null,
+    "pendingQuestionAsked": null,
+    "unansweredQuestionDaysWaiting": 0,
+    "gameplayInfluenceSummary": "Triggered dislike (hostile tone (\"liar\"), hostile tone (\"suspect\")) → Tenant attitude shifted to COLD (Trust 32/100) | Gameplay Effect: Clara Vance dislikes you and locks secret passage hints until trust recovers.",
+    "unlockedClueId": null
+  }
+}

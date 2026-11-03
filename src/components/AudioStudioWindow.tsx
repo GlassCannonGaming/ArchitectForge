@@ -14,7 +14,9 @@ import {
   FloorId,
   HotelAgentProfile,
   evaluateRoomSuspicionLevel,
-  RoomSuspicionState
+  RoomSuspicionState,
+  GEMINI_PREBUILT_VOICES,
+  GeminiPrebuiltVoiceName
 } from '../game/rules';
 import { AssetBlueprint } from '../game/hotelData';
 import { StudioWindowFrame } from './StudioWindowFrame';
@@ -50,6 +52,15 @@ interface AudioStudioWindowProps {
   suspicionAmbienceThreshold?: number;
   onUpdateSuspicionThreshold?: (threshold: number) => void;
   onUpdateAgentSuspicion?: (agentId: string, nextSuspicion: number) => void;
+  onUpdateAgentVoiceProfile?: (
+    agentId: string,
+    updates: {
+      prebuiltVoiceName: GeminiPrebuiltVoiceName;
+      vocalTone: string;
+      accent: string;
+      voiceSoundPresetId: SoundEffectType;
+    }
+  ) => void;
 }
 
 export const AudioStudioWindow: React.FC<AudioStudioWindowProps> = ({
@@ -73,7 +84,8 @@ export const AudioStudioWindow: React.FC<AudioStudioWindowProps> = ({
   agents = [],
   suspicionAmbienceThreshold = 60,
   onUpdateSuspicionThreshold,
-  onUpdateAgentSuspicion
+  onUpdateAgentSuspicion,
+  onUpdateAgentVoiceProfile
 }) => {
   const [activeTab, setActiveTab] = useState<'sfx' | 'bgm' | 'settings'>('sfx');
 
@@ -87,6 +99,20 @@ export const AudioStudioWindow: React.FC<AudioStudioWindowProps> = ({
   const [sfxFeedback, setSfxFeedback] = useState<string | null>(null);
   const [targetAssetIdForSound, setTargetAssetIdForSound] = useState<string>('');
   const [targetBlueprintSubTypeForSound, setTargetBlueprintSubTypeForSound] = useState<string>('');
+
+  // Tenant Voice Tone & Sound State in Sound Board
+  const [selectedTenantIdForVoice, setSelectedTenantIdForVoice] = useState<string>('');
+  const effectiveTenantForVoice =
+    agents.find((a) => a.id === selectedTenantIdForVoice) || agents[agents.length - 1] || null;
+  const [tenantVoiceTimbre, setTenantVoiceTimbre] = useState<GeminiPrebuiltVoiceName>('Zephyr');
+  const [tenantVocalTone, setTenantVocalTone] = useState<string>(
+    'Hushed, breathy midnight contralto with resonant whisper undertone'
+  );
+  const [tenantVoiceAccent, setTenantVoiceAccent] = useState<string>(
+    '1970s Old New York Mid-Atlantic'
+  );
+  const [tenantVoiceSoundPreset, setTenantVoiceSoundPreset] =
+    useState<SoundEffectType>('hotel_ambience');
 
   const effectiveTargetAssetId =
     targetAssetIdForSound || selectedAssetId || (assets[0]?.id ?? '');
@@ -1106,6 +1132,123 @@ export const AudioStudioWindow: React.FC<AudioStudioWindowProps> = ({
               className="px-2.5 py-1 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-white font-bold text-[11px] shrink-0"
             >
               🔗 Assign to Blueprint
+            </button>
+          </div>
+        </div>
+
+        {/* 2B. Tenant Voice Tone & Vocal Sound Configurator */}
+        <div
+          data-testid="soundboard-tenant-voice-panel"
+          className="p-2.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-bold text-amber-300 uppercase tracking-wider truncate">
+              2B · Tenant Voice Tone &amp; Vocal Sound
+            </span>
+            <span
+              data-testid="soundboard-tenant-voice-badge"
+              className="text-[10px] font-mono text-sky-300 shrink-0"
+            >
+              {effectiveTenantForVoice
+                ? `${effectiveTenantForVoice.name} (${effectiveTenantForVoice.voiceProfile?.prebuiltVoiceName || tenantVoiceTimbre})`
+                : 'No Tenant'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-1.5">
+            <select
+              aria-label="Select Tenant for Voice Tone Configuration"
+              data-testid="soundboard-select-tenant"
+              value={effectiveTenantForVoice?.id || ''}
+              onChange={(e) => {
+                const nextId = e.target.value;
+                setSelectedTenantIdForVoice(nextId);
+                const found = agents.find((a) => a.id === nextId);
+                if (found?.voiceProfile) {
+                  setTenantVoiceTimbre(found.voiceProfile.prebuiltVoiceName);
+                  setTenantVocalTone(found.voiceProfile.vocalTone);
+                  setTenantVoiceAccent(found.voiceProfile.accent);
+                }
+              }}
+              className="bg-slate-900 border border-slate-700 rounded-xl px-2 py-1 text-[11px] text-slate-200 truncate"
+            >
+              {agents.map((ag) => (
+                <option key={ag.id} value={ag.id}>
+                  {ag.name} ({ag.roomNumber})
+                </option>
+              ))}
+            </select>
+
+            <select
+              aria-label="Select Tenant Voice Timbre"
+              data-testid="soundboard-tenant-voice-timbre"
+              value={tenantVoiceTimbre}
+              onChange={(e) => setTenantVoiceTimbre(e.target.value as GeminiPrebuiltVoiceName)}
+              className="bg-slate-900 border border-slate-700 rounded-xl px-2 py-1 text-[11px] text-slate-200 truncate"
+            >
+              {GEMINI_PREBUILT_VOICES.map((v) => (
+                <option key={v.voiceName} value={v.voiceName}>
+                  {v.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-1.5">
+            <input
+              type="text"
+              aria-label="Tenant Vocal Tone Description"
+              data-testid="soundboard-tenant-vocal-tone-input"
+              value={tenantVocalTone}
+              onChange={(e) => setTenantVocalTone(e.target.value)}
+              placeholder="Vocal tone (e.g. Hushed, smoky, tense)..."
+              className="bg-slate-900 border border-slate-700 rounded-xl px-2 py-1 text-[11px] text-slate-200"
+            />
+            <select
+              aria-label="Select Tenant Vocal Sound Cue"
+              data-testid="soundboard-tenant-voice-sound-select"
+              value={tenantVoiceSoundPreset}
+              onChange={(e) => setTenantVoiceSoundPreset(e.target.value as SoundEffectType)}
+              className="bg-slate-900 border border-slate-700 rounded-xl px-2 py-1 text-[11px] text-slate-200 truncate"
+            >
+              {(Object.keys(BUILTIN_SOUND_EFFECTS) as SoundEffectType[]).map((type) => (
+                <option key={type} value={type}>
+                  Cue: {BUILTIN_SOUND_EFFECTS[type].name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center justify-between gap-1.5">
+            <input
+              type="text"
+              aria-label="Tenant Voice Accent"
+              data-testid="soundboard-tenant-voice-accent-input"
+              value={tenantVoiceAccent}
+              onChange={(e) => setTenantVoiceAccent(e.target.value)}
+              placeholder="Accent..."
+              className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-2 py-1 text-[11px] text-slate-200"
+            />
+            <button
+              type="button"
+              data-testid="soundboard-apply-tenant-voice-btn"
+              onClick={() => {
+                if (!effectiveTenantForVoice) return;
+                const cueSpec = BUILTIN_SOUND_EFFECTS[tenantVoiceSoundPreset];
+                audioEngine.playSoundEffect(cueSpec);
+                onUpdateAgentVoiceProfile?.(effectiveTenantForVoice.id, {
+                  prebuiltVoiceName: tenantVoiceTimbre,
+                  vocalTone: tenantVocalTone,
+                  accent: tenantVoiceAccent,
+                  voiceSoundPresetId: tenantVoiceSoundPreset
+                });
+                setSfxFeedback(
+                  `Configured ${effectiveTenantForVoice.name}'s voice: ${tenantVoiceTimbre} · Tone: "${tenantVocalTone}" · Sound Cue: ${cueSpec.name}`
+                );
+              }}
+              className="px-2.5 py-1 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] shrink-0"
+            >
+              🎙️ Apply Voice Tone &amp; Sound
             </button>
           </div>
         </div>

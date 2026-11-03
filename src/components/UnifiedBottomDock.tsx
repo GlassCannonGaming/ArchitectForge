@@ -357,130 +357,136 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
         className="hidden"
       />
 
-      {/* 1. FLOOR LAYERS STACK WINDOW (Available in all modes via WINDOWS taskbar) */}
-      <StudioWindowFrame
-        windowState={windows.layers || createDefaultStudioWindows().layers}
-        badgeText={`${floorLayers.length} Floors`}
-        onFocus={onFocusWindow}
-        onMove={onMoveWindow}
-        onResize={onResizeWindow}
-        onToggleMinimize={onToggleMinimizeWindow}
-        onToggleMaximize={onToggleMaximizeWindow}
-        onClose={onCloseWindow}
-      >
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-1">
-            <span className="text-[11px] font-bold text-slate-600">Step Elevation:</span>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={handleStepFloorUp}
-                disabled={currentLayerIndex <= 0}
-                title="Move Up One Floor Layer"
-                className="w-6 h-6 rounded-full bg-slate-100 hover:bg-[#e0f2fe] disabled:opacity-40 text-slate-700 text-[10px] font-bold flex items-center justify-center border border-slate-300"
-              >
-                ▲
-              </button>
-              <button
-                type="button"
-                onClick={handleStepFloorDown}
-                disabled={currentLayerIndex < 0 || currentLayerIndex >= sortedLayersTopDown.length - 1}
-                title="Move Down One Floor Layer"
-                className="w-6 h-6 rounded-full bg-slate-100 hover:bg-[#e0f2fe] disabled:opacity-40 text-slate-700 text-[10px] font-bold flex items-center justify-center border border-slate-300"
-              >
-                ▼
-              </button>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={onAddFloorLayer}
-            className="w-full py-1.5 px-3 rounded-full bg-gradient-to-r from-[#10b981] to-[#059669] hover:from-[#059669] hover:to-[#047857] text-white font-bold text-xs shadow-xs flex items-center justify-center gap-1.5 transition-all"
-          >
-            <span>+ Add Floor Layer</span>
-          </button>
-
-          <div className="flex items-center gap-1.5">
-            <label htmlFor="active-floor-dropdown" className="text-[10px] font-semibold text-slate-500 shrink-0">
-              Active:
-            </label>
-            <select
-              id="active-floor-dropdown"
-              aria-label="Active Floor Layer"
-              value={currentFloor}
-              onChange={(e) => {
-                e.currentTarget.blur();
-                onSelectFloor(e.target.value);
-              }}
-              className="w-full bg-slate-50 border border-slate-300 rounded-xl px-2 py-1 text-xs font-bold text-slate-800"
-            >
-              {sortedLayersTopDown.map((layer) => (
-                <option key={layer.id} value={layer.id}>
-                  {layer.shortCode} · {layer.label.split('·')[0].trim()}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex flex-col gap-1 pr-0.5">
-            {sortedLayersTopDown.map((layer) => {
-              const isActive = layer.id === currentFloor;
-              return (
-                <div
-                  key={layer.id}
-                  className={`flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-2xl text-xs transition-all ${
-                    isActive
-                      ? 'bg-gradient-to-r from-[#0ea5e9] to-[#0284c7] text-white font-bold shadow-xs'
-                      : 'bg-slate-100/90 hover:bg-slate-200/80 text-slate-700'
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => onToggleFloorLayerVisibility(layer.id)}
-                    title={
-                      isActive
-                        ? 'Active editing floor layer'
-                        : layer.visible
-                        ? 'Hide reference layer in 3D view'
-                        : 'Show as ghost reference layer in 3D view'
-                    }
-                    className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] ${
-                      isActive
-                        ? 'bg-white/25 text-white'
-                        : layer.visible
-                        ? 'bg-[#bae6fd] text-[#0369a1]'
-                        : 'bg-slate-200 text-slate-400'
-                    }`}
-                  >
-                    {isActive || layer.visible ? '👁' : '·'}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => onSelectFloor(layer.id)}
-                    className="flex-1 text-left truncate"
-                  >
-                    <span className="font-mono text-[10px] opacity-80 mr-1">{layer.shortCode}</span>
-                    <span>{layer.label.split('·')[0].trim()}</span>
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-
-          <button
-            type="button"
-            onClick={onClearFloor}
-            className="w-full py-1 px-2.5 rounded-full bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-[11px] font-semibold transition-colors"
-          >
-            Clear Active Layer
-          </button>
-        </div>
-      </StudioWindowFrame>
-
       {mode !== 'character' && mode !== 'soundboard' && (
         <>
+          {/* 1. FLOOR LAYERS STACK WINDOW */}
+          <StudioWindowFrame
+            windowState={windows.layers || createDefaultStudioWindows().layers}
+            badgeText={`${floorLayers.length} Floors`}
+            onFocus={onFocusWindow}
+            onMove={onMoveWindow}
+            onResize={onResizeWindow}
+            onToggleMinimize={onToggleMinimizeWindow}
+            onToggleMaximize={onToggleMaximizeWindow}
+            onClose={onCloseWindow}
+          >
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[11px] font-bold text-slate-600">Step Elevation:</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    data-testid="step-floor-up-btn"
+                    onClick={handleStepFloorUp}
+                    title="Move Up One Floor Layer"
+                    className={`w-6 h-6 rounded-full bg-slate-100 hover:bg-[#e0f2fe] text-slate-700 text-[10px] font-bold flex items-center justify-center border border-slate-300 ${
+                      currentLayerIndex <= 0 ? 'opacity-40' : ''
+                    }`}
+                  >
+                    ▲
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="step-floor-down-btn"
+                    onClick={handleStepFloorDown}
+                    title="Move Down One Floor Layer"
+                    className={`w-6 h-6 rounded-full bg-slate-100 hover:bg-[#e0f2fe] text-slate-700 text-[10px] font-bold flex items-center justify-center border border-slate-300 ${
+                      currentLayerIndex < 0 || currentLayerIndex >= sortedLayersTopDown.length - 1
+                        ? 'opacity-40'
+                        : ''
+                    }`}
+                  >
+                    ▼
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={onAddFloorLayer}
+                className="w-full py-1.5 px-3 rounded-full bg-gradient-to-r from-[#10b981] to-[#059669] hover:from-[#059669] hover:to-[#047857] text-white font-bold text-xs shadow-xs flex items-center justify-center gap-1.5 transition-all"
+              >
+                <span>+ Add Floor Layer</span>
+              </button>
+
+              <div className="flex items-center gap-1.5">
+                <label htmlFor="active-floor-dropdown" className="text-[10px] font-semibold text-slate-500 shrink-0">
+                  Active:
+                </label>
+                <select
+                  id="active-floor-dropdown"
+                  aria-label="Active Floor Layer"
+                  value={currentFloor}
+                  onChange={(e) => {
+                    e.currentTarget.blur();
+                    onSelectFloor(e.target.value);
+                  }}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-2 py-1 text-xs font-bold text-slate-800"
+                >
+                  {sortedLayersTopDown.map((layer) => (
+                    <option key={layer.id} value={layer.id}>
+                      {layer.shortCode} · {layer.label.split('·')[0].trim()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1 pr-0.5">
+                {sortedLayersTopDown.map((layer) => {
+                  const isActive = layer.id === currentFloor;
+                  return (
+                    <div
+                      key={layer.id}
+                      className={`flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-2xl text-xs transition-all ${
+                        isActive
+                          ? 'bg-gradient-to-r from-[#0ea5e9] to-[#0284c7] text-white font-bold shadow-xs'
+                          : 'bg-slate-100/90 hover:bg-slate-200/80 text-slate-700'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => onToggleFloorLayerVisibility(layer.id)}
+                        title={
+                          isActive
+                            ? 'Active editing floor layer'
+                            : layer.visible
+                            ? 'Hide reference layer in 3D view'
+                            : 'Show as ghost reference layer in 3D view'
+                        }
+                        className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] ${
+                          isActive
+                            ? 'bg-white/25 text-white'
+                            : layer.visible
+                            ? 'bg-[#bae6fd] text-[#0369a1]'
+                            : 'bg-slate-200 text-slate-400'
+                        }`}
+                      >
+                        {isActive || layer.visible ? '👁' : '·'}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => onSelectFloor(layer.id)}
+                        className="flex-1 text-left truncate"
+                      >
+                        <span className="font-mono text-[10px] opacity-80 mr-1">{layer.shortCode}</span>
+                        <span>{layer.label.split('·')[0].trim()}</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                onClick={onClearFloor}
+                className="w-full py-1 px-2.5 rounded-full bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-[11px] font-semibold transition-colors"
+              >
+                Clear Active Layer
+              </button>
+            </div>
+          </StudioWindowFrame>
+
           {/* 2. ROOM BLUEPRINTS LIBRARY WINDOW (Save, Tag, Search & Load Entire Room Layouts as JSON) */}
           <StudioWindowFrame
             windowState={windows.blueprints || createDefaultStudioWindows().blueprints}
@@ -913,7 +919,7 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                               : 'bg-white hover:bg-sky-50 text-slate-700 border border-slate-300'
                           }`}
                         >
-                          {label}
+                          <span data-testid={`tools-snap-grid-${stepVal}`}>{label}</span>
                         </button>
                       );
                     })}
@@ -1027,7 +1033,7 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                       : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200'
                   }`}
                 >
-                  <span className="flex items-center gap-1.5">
+                  <span data-testid="tools-wall-tool-btn" className="flex items-center gap-1.5">
                     <span>🧱</span>
                     <span>Wall Tool (Click &amp; Drag Row)</span>
                   </span>

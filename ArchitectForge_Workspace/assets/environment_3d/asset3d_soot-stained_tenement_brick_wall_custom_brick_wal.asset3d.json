@@ -1,20 +1,20 @@
 {
   "schemaVersion": "2.0.0",
-  "savedAt": "2026-11-02T16:11:09.433Z",
+  "savedAt": "2026-11-03T13:25:58.872Z",
   "category": "environment_3d",
   "folderPath": "ArchitectForge_Workspace/assets/environment_3d",
   "itemName": "Soot-Stained Tenement Brick Wall",
   "data": {
-    "id": "custom_brick_wall_segment_1793635869426_0_b4ob",
+    "id": "custom_brick_wall_segment_1793712358868_0_t79p",
     "name": "Soot-Stained Tenement Brick Wall",
     "category": "wall",
     "subType": "brick_wall_segment",
     "floor": "floor2",
     "roomNumber": "Ground Floor · Layer L1",
     "position": [
-      -4,
+      -1.5,
       1.5,
-      -3
+      -0.5
     ],
     "dimensions": [
       3,
