@@ -136,6 +136,7 @@ interface UnifiedBottomDockProps {
   onPlaceAssetSet?: (assetSet: AssetSet, offsetX?: number, offsetZ?: number) => void;
   onDeleteAssetSet?: (id: string) => void;
   onExportAssetSet?: (assetSet: AssetSet) => void;
+  onResetRoom?: () => void;
 }
 
 const TEXTURE_OPTIONS: { id: TexturePresetId; label: string }[] = [
@@ -223,7 +224,8 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
   onSaveSelectionAsAssetSet,
   onPlaceAssetSet,
   onDeleteAssetSet,
-  onExportAssetSet
+  onExportAssetSet,
+  onResetRoom
 }) => {
   const [architectTab, setArchitectTab] = useState<'catalog' | 'sets' | 'ai3d' | 'texture' | 'lore' | 'models'>('catalog');
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
@@ -1035,7 +1037,7 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                 >
                   <span data-testid="tools-wall-tool-btn" className="flex items-center gap-1.5">
                     <span>🧱</span>
-                    <span>Wall Tool (Click &amp; Drag Row)</span>
+                    <span data-testid="wall-tool">Wall Tool (Click &amp; Drag Row)</span>
                   </span>
                   <span className="text-[10px] font-mono px-1.5 py-0.5 bg-white/40 text-amber-950 font-bold rounded-md">
                     [B]
@@ -1091,6 +1093,24 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                   <span>↶ Undo ({undoCount})</span>
                   <span className="text-[10px]">[Ctrl+Z]</span>
                 </button>
+
+                {onResetRoom && (
+                  <button
+                    type="button"
+                    data-testid="reset-room-btn"
+                    onClick={onResetRoom}
+                    title="Clear all assets placed in the active room and restore default architecture"
+                    className="w-full px-3 py-1 rounded-full text-xs font-bold text-left flex items-center justify-between transition-all bg-rose-50 hover:bg-rose-100 text-rose-900 border border-rose-300"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span>🔄</span>
+                      <span data-testid="reset-room">Reset Room</span>
+                    </span>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 bg-white/60 text-rose-900 font-bold rounded-md">
+                      Restore Arch
+                    </span>
+                  </button>
+                )}
 
                 <div className="grid grid-cols-3 gap-1 pt-0.5">
                   <button

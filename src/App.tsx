@@ -95,7 +95,8 @@ import {
   evaluateRoomSuspicionLevel,
   resolveAssetInteractionAnimationGesture,
   isInvisibleTriggerAsset,
-  evaluateInvisibleTriggersAtPosition
+  evaluateInvisibleTriggersAtPosition,
+  resetRoomToDefaultArchitecture
 } from './game/rules';
 import {
   INITIAL_PLACED_ASSETS,
@@ -316,6 +317,8 @@ export default function App() {
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
+  const [hoveredAssetId, setHoveredAssetId] = useState<string | null>(null);
   const [marqueeModeActive, setMarqueeModeActive] = useState<boolean>(false);
   const [quickEditWindowOpen, setQuickEditWindowOpen] = useState<boolean>(false);
   const [selectedAssetScreenPos, setSelectedAssetScreenPos] = useState<{ x: number; y: number }>({
@@ -1366,57 +1369,60 @@ export default function App() {
       if (isActionKeyPressed('quick_edit', e.code, keybindings) && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         const qeLabel = getPrimaryActionKeyLabel('quick_edit', keybindings);
-        if (selectedAgentId) {
+        const targetAgentId = hoveredAgentId || selectedAgentId;
+        if (targetAgentId) {
           soundFX.playPlaceAsset();
-          setQuickEditWindowOpen((prev) => {
-            const nextOpen = !prev;
-            const foundAg = agents.find((ag) => ag.id === selectedAgentId);
+          if (selectedAgentId !== targetAgentId) {
+            setSelectedAgentId(targetAgentId);
+            setSelectedAssetId(null);
+            setSelectedAssetIds([]);
+            setQuickEditWindowOpen(true);
+            const foundAg = agents.find((ag) => ag.id === targetAgentId);
             setStatusBanner(
-              nextOpen
-                ? `🧑 Opened Character Quick Parameters [${qeLabel}] for "${foundAg ? foundAg.name : 'Character'}" — Adjust trust, suspicion, expression, or shared rig animation!`
-                : `Closed Character Quick Parameters [${qeLabel}].`
+              `🧑 Opened Character Quick Edit [${qeLabel}] for "${foundAg ? foundAg.name : 'Character'}" — Resize rig, alter outfit color, or adjust parameters & shared rig animation!`
             );
-            return nextOpen;
-          });
+          } else {
+            setQuickEditWindowOpen((prev) => {
+              const nextOpen = !prev;
+              const foundAg = agents.find((ag) => ag.id === targetAgentId);
+              setStatusBanner(
+                nextOpen
+                  ? `🧑 Opened Character Quick Edit [${qeLabel}] for "${foundAg ? foundAg.name : 'Character'}" — Resize rig, alter outfit color, or adjust parameters & shared rig animation!`
+                  : `Closed Character Quick Edit [${qeLabel}].`
+              );
+              return nextOpen;
+            });
+          }
           return;
         }
-        if (selectedAssetId) {
+        const targetAssetId = hoveredAssetId || selectedAssetId;
+        if (targetAssetId) {
           soundFX.playPlaceAsset();
-          setQuickEditWindowOpen((prev) => {
-            const nextOpen = !prev;
-            const found = assets.find((a) => a.id === selectedAssetId);
+          if (selectedAssetId !== targetAssetId) {
+            setSelectedAssetId(targetAssetId);
+            setSelectedAssetIds([targetAssetId]);
+            setSelectedAgentId(null);
+            setQuickEditWindowOpen(true);
+            const found = assets.find((a) => a.id === targetAssetId);
             setStatusBanner(
-              nextOpen
-                ? `Opened Quick Edit Window [${qeLabel}] to the right of "${found ? found.name : 'Asset'}" — Resize or alter color!`
-                : `Closed Quick Edit Window [${qeLabel}].`
+              `Opened Quick Edit Window [${qeLabel}] to the right of "${found ? found.name : 'Asset'}" — Resize or alter color!`
             );
-            return nextOpen;
-          });
-          return;
-        }
-        // In First-Person Walk Mode (or Build Mode), if no character/asset is clicked yet, auto-select nearest character on current floor when pressing [F]
-        const floorAgents = agents.filter(
-          (ag) => ag.floor === currentFloor && ag.role !== 'helper_entity'
-        );
-        if (floorAgents.length > 0) {
-          const px = lastPlayerWalkPosRef.current[0];
-          const pz = lastPlayerWalkPosRef.current[2];
-          const sorted = [...floorAgents].sort(
-            (a, b) =>
-              Math.hypot(a.position[0] - px, a.position[2] - pz) -
-              Math.hypot(b.position[0] - px, b.position[2] - pz)
-          );
-          const closestAg = sorted[0];
-          setSelectedAgentId(closestAg.id);
-          setQuickEditWindowOpen(true);
-          soundFX.playPlaceAsset();
-          setStatusBanner(
-            `🧑 Quick-Selected "${closestAg.name}" [${qeLabel}] — Adjust character parameters or shared rig animation!`
-          );
+          } else {
+            setQuickEditWindowOpen((prev) => {
+              const nextOpen = !prev;
+              const found = assets.find((a) => a.id === targetAssetId);
+              setStatusBanner(
+                nextOpen
+                  ? `Opened Quick Edit Window [${qeLabel}] to the right of "${found ? found.name : 'Asset'}" — Resize or alter color!`
+                  : `Closed Quick Edit Window [${qeLabel}].`
+              );
+              return nextOpen;
+            });
+          }
           return;
         }
         setStatusBanner(
-          `Click a 3D asset or character first, then press [${qeLabel}] to open the Quick Edit Window.`
+          `Mouse over or click a 3D character or asset first, then press [${qeLabel}] to open the Quick Edit Window.`
         );
         return;
       }
@@ -1548,6 +1554,8 @@ export default function App() {
     selectedAssetId,
     selectedAssetIds,
     selectedAgentId,
+    hoveredAgentId,
+    hoveredAssetId,
     agents,
     assets,
     mode,
@@ -2496,6 +2504,25 @@ export default function App() {
       setStatusBanner('Failed to parse Blueprint JSON file.');
     }
   }, []);
+
+  // Reset active room/floor: clears all placed assets in the active room and restores default architecture
+  const handleResetRoom = useCallback(() => {
+    recordUndoSnapshot(`Reset Room (${currentRoomLabel || currentFloor})`);
+    soundFX.playPlaceAsset();
+    const res = resetRoomToDefaultArchitecture({
+      allAssets: assets,
+      currentFloor,
+      activeRoomLabel: currentRoomLabel,
+      initialCatalogAssets: INITIAL_PLACED_ASSETS
+    });
+    setAssets(res.updatedAssets);
+    setSelectedAssetId(null);
+    setSelectedAssetIds([]);
+    setQuickEditWindowOpen(false);
+    setIsolateSelectedAsset(false);
+    setActiveBlueprint(null);
+    setStatusBanner(res.message);
+  }, [assets, currentFloor, currentRoomLabel, recordUndoSnapshot]);
 
   // ============================================================================
   // ENTIRE PROJECT SAVE & LOAD SYSTEM (Browser Slots + Portable .json Files)
@@ -3570,7 +3597,10 @@ export default function App() {
         selectedAssetId={selectedAssetId}
         selectedAssetIds={selectedAssetIds}
         selectedAgentId={selectedAgentId}
+        hoveredAgentId={hoveredAgentId}
         onSelectAgent={handleSelectAgent}
+        onHoverAgent={setHoveredAgentId}
+        onHoverAsset={setHoveredAssetId}
         onMoveSelectedAgentTo={handleMoveSelectedAgentTo}
         onSelectedAgentScreenPosition={(pos) => {
           if (pos) setSelectedAgentScreenPos(pos);
@@ -4224,6 +4254,7 @@ export default function App() {
             });
             setStatusBanner(`Exported Asset Set "asset_set_${safeName}.assetset.json"!`);
           }}
+          onResetRoom={handleResetRoom}
         />
       </div>
     </main>

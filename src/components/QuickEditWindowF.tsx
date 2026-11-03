@@ -174,30 +174,59 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
       'shocked'
     ];
 
+    const heightScale = Number(selectedAgent.appearance?.heightScale ?? 1.0);
+    const widthScale = Number(selectedAgent.appearance?.widthScale ?? 1.0);
+    const headScale = Number(selectedAgent.appearance?.headScale ?? 1.0);
+    const outfitColor = selectedAgent.appearance?.outfitColor || '#3b2314';
+
+    const updateAppearanceField = (patch: Partial<HotelAgentProfile['appearance']>, msg?: string) => {
+      onUpdateAgent?.(
+        {
+          ...selectedAgent,
+          appearance: {
+            ...selectedAgent.appearance,
+            ...patch
+          }
+        },
+        msg
+      );
+    };
+
     return (
       <div
+        role="dialog"
+        aria-label="Quick Character Editor [F]"
         data-testid="quick-edit-window-f"
         style={{ left: `${left}px`, top: `${top}px` }}
-        className="fixed z-50 w-72 y2k-Aero-pod rounded-3xl p-2.5 text-xs text-slate-800 shadow-2xl border border-violet-300/90 select-none animate-in fade-in zoom-in-95 duration-150"
+        className="studio-dark-window fixed z-40 w-72 pointer-events-auto bg-slate-900/95 backdrop-blur-md border-2 border-[#38bdf8] rounded-3xl shadow-2xl overflow-hidden text-slate-100 transition-shadow select-none"
       >
+        {/* Draggable Window Title Bar with Minimize & Close [F] (Matches Asset Quick Edit Window) */}
         <div
           onPointerDown={startHeaderDrag}
-          className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-2xl bg-gradient-to-r from-[#7c3aed] to-[#4f46e5] text-white cursor-grab active:cursor-grabbing"
+          className="cursor-move select-none bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 flex items-center justify-between gap-2 border-b border-slate-800 px-3.5 py-2"
         >
-          <div className="flex items-center gap-1.5 truncate">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-300 shadow-xs shrink-0" />
-            <span className="font-extrabold tracking-tight truncate">
-              🧑 Character Quick Edit [F]
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-slate-500 text-xs font-bold">⋮⋮</span>
+            <span className="w-5 h-5 rounded-full bg-gradient-to-br from-[#10b981] to-[#059669] text-white text-[10px] font-extrabold flex items-center justify-center shrink-0">
+              F
             </span>
+            <div className="truncate">
+              <div className="text-xs font-extrabold text-slate-100 truncate">
+                {selectedAgent.name}
+              </div>
+              <div className="text-[10px] font-medium text-[#38bdf8] truncate">
+                Character Quick Edit · Drag to Move
+              </div>
+            </div>
           </div>
           <div className="flex items-center gap-1 shrink-0">
             <button
               type="button"
               onClick={() => setMinimized((m) => !m)}
-              className="w-5 h-5 rounded-full bg-white/25 hover:bg-white/40 flex items-center justify-center text-[10px] font-bold"
-              title={minimized ? 'Expand' : 'Minimize'}
+              title={minimized ? 'Restore Character Quick Edit' : 'Minimize Character Quick Edit'}
+              className="w-5 h-5 rounded-full bg-amber-950/90 hover:bg-amber-900 text-amber-200 text-[10px] font-bold flex items-center justify-center border border-amber-700/70"
             >
-              {minimized ? '+' : '–'}
+              {minimized ? '▲' : '—'}
             </button>
             <button
               type="button"
@@ -206,67 +235,147 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
                 onClearAgentSelection?.();
                 onClose();
               }}
-              className="w-5 h-5 rounded-full bg-rose-500/80 hover:bg-rose-500 flex items-center justify-center text-[10px] font-bold"
-              title="Close Quick Edit [F]"
+              title="Close Quick Edit Window [F]"
+              className="px-2 py-0.5 rounded-full bg-rose-950/90 hover:bg-rose-900 text-rose-200 text-[10px] font-bold shrink-0 border border-rose-700/70"
             >
-              ✕
+              ✕ [F]
             </button>
           </div>
         </div>
 
         {!minimized && (
-          <div data-testid="quick-edit-character-panel" className="mt-2 space-y-2 px-1">
-            {/* Character Name & Room */}
-            <div className="bg-violet-50/90 border border-violet-200 rounded-2xl p-2 space-y-1.5">
-              <div className="flex items-center justify-between gap-1">
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-violet-900">
-                  Tenant / Rig Identity
+          <div data-testid="quick-edit-character-panel" className="p-3.5 space-y-2.5 text-slate-800">
+            {/* 1. RESIZE RIG PROPORTIONS (Height / Width / Head Scale — Mirrors Asset Resize Dimensions) */}
+            <div className="space-y-1.5 bg-slate-50/90 border border-slate-200 rounded-2xl p-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-600">
+                  Resize Rig Scale
                 </span>
-                <span className="text-[9px] font-mono bg-violet-200/80 text-violet-900 px-1.5 py-0.5 rounded-full font-bold">
-                  Room {selectedAgent.roomNumber || 'Lobby'} · {(selectedAgent.floor || 'lobby').toUpperCase()}
-                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    data-testid="quick-edit-agent-scale-down-btn"
+                    onClick={() =>
+                      updateAppearanceField(
+                        {
+                          heightScale: Number(Math.max(0.7, heightScale * 0.92).toFixed(2)),
+                          widthScale: Number(Math.max(0.7, widthScale * 0.92).toFixed(2))
+                        },
+                        `Scaled ${selectedAgent.name} -8%`
+                      )
+                    }
+                    className="px-2 py-0.5 rounded-full bg-white hover:bg-[#e0f2fe] border border-slate-300 text-[10px] font-bold text-slate-700"
+                  >
+                    -8%
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="quick-edit-agent-scale-up-btn"
+                    onClick={() =>
+                      updateAppearanceField(
+                        {
+                          heightScale: Number(Math.min(1.35, heightScale * 1.08).toFixed(2)),
+                          widthScale: Number(Math.min(1.35, widthScale * 1.08).toFixed(2))
+                        },
+                        `Scaled ${selectedAgent.name} +8%`
+                      )
+                    }
+                    className="px-2 py-0.5 rounded-full bg-white hover:bg-[#e0f2fe] border border-slate-300 text-[10px] font-bold text-slate-700"
+                  >
+                    +8%
+                  </button>
+                </div>
               </div>
-              <input
-                type="text"
-                data-testid="quick-edit-agent-name-input"
-                value={selectedAgent.name}
-                onChange={(e) =>
-                  onUpdateAgent?.(
-                    { ...selectedAgent, name: e.target.value },
-                    `Renamed character to ${e.target.value}`
-                  )
-                }
-                className="w-full bg-white border border-violet-300 rounded-lg px-2 py-1 text-[11px] font-bold text-slate-900"
-              />
-              <div className="grid grid-cols-2 gap-1">
-                <div>
-                  <span className="text-[9px] text-slate-500 font-bold block">Occupation</span>
+
+              <div className="grid grid-cols-3 gap-1.5 text-[10px]">
+                <label className="flex flex-col">
+                  <span className="text-slate-500 font-semibold">Height</span>
                   <input
-                    type="text"
-                    data-testid="quick-edit-agent-occupation-input"
-                    value={selectedAgent.occupation}
+                    type="number"
+                    aria-label="Character Height Scale"
+                    step={0.05}
+                    min={0.7}
+                    max={1.35}
+                    value={heightScale}
                     onChange={(e) =>
-                      onUpdateAgent?.({ ...selectedAgent, occupation: e.target.value })
+                      updateAppearanceField({
+                        heightScale: parseFloat(e.target.value) || 1.0
+                      })
                     }
-                    className="w-full bg-white border border-slate-300 rounded-lg px-1.5 py-0.5 text-[10px] font-semibold text-slate-800"
+                    className="mt-0.5 bg-white border border-slate-300 rounded-xl px-1.5 py-0.5 text-xs font-mono font-bold text-slate-800"
                   />
-                </div>
-                <div>
-                  <span className="text-[9px] text-slate-500 font-bold block">Room #</span>
+                </label>
+                <label className="flex flex-col">
+                  <span className="text-slate-500 font-semibold">Width</span>
                   <input
-                    type="text"
-                    data-testid="quick-edit-agent-room-input"
-                    value={selectedAgent.roomNumber}
+                    type="number"
+                    aria-label="Character Width Scale"
+                    step={0.05}
+                    min={0.7}
+                    max={1.35}
+                    value={widthScale}
                     onChange={(e) =>
-                      onUpdateAgent?.({ ...selectedAgent, roomNumber: e.target.value })
+                      updateAppearanceField({
+                        widthScale: parseFloat(e.target.value) || 1.0
+                      })
                     }
-                    className="w-full bg-white border border-slate-300 rounded-lg px-1.5 py-0.5 text-[10px] font-semibold text-slate-800"
+                    className="mt-0.5 bg-white border border-slate-300 rounded-xl px-1.5 py-0.5 text-xs font-mono font-bold text-slate-800"
                   />
-                </div>
+                </label>
+                <label className="flex flex-col">
+                  <span className="text-slate-500 font-semibold">Head</span>
+                  <input
+                    type="number"
+                    aria-label="Character Head Scale"
+                    step={0.05}
+                    min={0.75}
+                    max={1.4}
+                    value={headScale}
+                    onChange={(e) =>
+                      updateAppearanceField({
+                        headScale: parseFloat(e.target.value) || 1.0
+                      })
+                    }
+                    className="mt-0.5 bg-white border border-slate-300 rounded-xl px-1.5 py-0.5 text-xs font-mono font-bold text-slate-800"
+                  />
+                </label>
               </div>
             </div>
 
-            {/* Shared Character Interact & Rig Animation Selector */}
+            {/* 2. ALTER OUTFIT COLOR & SWATCH (Mirrors Asset Color & Swatch) */}
+            <div className="space-y-1.5 bg-slate-50/90 border border-slate-200 rounded-2xl p-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-600">
+                  Alter Outfit Color &amp; Swatch
+                </span>
+                <input
+                  type="color"
+                  aria-label="Character Outfit Color"
+                  value={outfitColor}
+                  onChange={(e) => updateAppearanceField({ outfitColor: e.target.value })}
+                  className="w-5 h-5 rounded-full cursor-pointer border border-slate-300 bg-transparent"
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-1 pt-0.5">
+                {SWATCH_COLORS.map((swatch) => (
+                  <button
+                    key={swatch}
+                    type="button"
+                    aria-label={`Character Outfit Swatch ${swatch}`}
+                    onClick={() => updateAppearanceField({ outfitColor: swatch })}
+                    className={`w-5 h-5 rounded-full border transition-transform ${
+                      outfitColor.toLowerCase() === swatch.toLowerCase()
+                        ? 'ring-2 ring-[#10b981] scale-115 border-white'
+                        : 'border-slate-300 hover:scale-110'
+                    }`}
+                    style={{ backgroundColor: swatch }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* 3. SHARED CHARACTER INTERACT & RIG ANIMATION SELECTOR */}
             <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-2 space-y-1">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-extrabold text-amber-950">
@@ -297,8 +406,55 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
               </select>
             </div>
 
-            {/* Trust, Suspicion & Spine Curvature Sliders */}
-            <div className="bg-white/90 border border-slate-200 rounded-2xl p-2 space-y-1.5">
+            {/* 4. CHARACTER IDENTITY, ROOM & AI PARAMETERS */}
+            <div className="bg-slate-50/90 border border-slate-200 rounded-2xl p-2 space-y-1.5">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-600">
+                  Identity &amp; Parameters
+                </span>
+                <span className="text-[9px] font-mono bg-sky-100 text-sky-900 px-1.5 py-0.5 rounded-full font-bold">
+                  {selectedAgent.roomNumber || 'Lobby'} · {(selectedAgent.floor || 'lobby').toUpperCase()}
+                </span>
+              </div>
+              <input
+                type="text"
+                data-testid="quick-edit-agent-name-input"
+                value={selectedAgent.name}
+                onChange={(e) =>
+                  onUpdateAgent?.(
+                    { ...selectedAgent, name: e.target.value },
+                    `Renamed character to ${e.target.value}`
+                  )
+                }
+                className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-[11px] font-bold text-slate-900"
+              />
+              <div className="grid grid-cols-2 gap-1">
+                <div>
+                  <span className="text-[9px] text-slate-500 font-bold block">Occupation</span>
+                  <input
+                    type="text"
+                    data-testid="quick-edit-agent-occupation-input"
+                    value={selectedAgent.occupation}
+                    onChange={(e) =>
+                      onUpdateAgent?.({ ...selectedAgent, occupation: e.target.value })
+                    }
+                    className="w-full bg-white border border-slate-300 rounded-lg px-1.5 py-0.5 text-[10px] font-semibold text-slate-800"
+                  />
+                </div>
+                <div>
+                  <span className="text-[9px] text-slate-500 font-bold block">Room #</span>
+                  <input
+                    type="text"
+                    data-testid="quick-edit-agent-room-input"
+                    value={selectedAgent.roomNumber}
+                    onChange={(e) =>
+                      onUpdateAgent?.({ ...selectedAgent, roomNumber: e.target.value })
+                    }
+                    className="w-full bg-white border border-slate-300 rounded-lg px-1.5 py-0.5 text-[10px] font-semibold text-slate-800"
+                  />
+                </div>
+              </div>
+
               <div>
                 <div className="flex justify-between text-[10px] font-bold">
                   <span className="text-emerald-800">Trust Level</span>
@@ -367,7 +523,7 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
                         }
                       });
                     }}
-                    className="bg-slate-50 border border-slate-300 rounded-lg px-1.5 py-0.5 text-[10px] font-bold text-slate-800"
+                    className="bg-white border border-slate-300 rounded-lg px-1.5 py-0.5 text-[10px] font-bold text-slate-800"
                   >
                     {EXPRESSIONS.map((exp) => (
                       <option key={exp} value={exp}>
@@ -381,30 +537,26 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
                     max={45}
                     value={selectedAgent.appearance?.spineCurvatureDeg ?? 10}
                     onChange={(e) =>
-                      onUpdateAgent?.({
-                        ...selectedAgent,
-                        appearance: {
-                          ...selectedAgent.appearance,
-                          spineCurvatureDeg: Number(e.target.value)
-                        }
+                      updateAppearanceField({
+                        spineCurvatureDeg: Number(e.target.value)
                       })
                     }
-                    className="w-full accent-violet-600 h-1.5 self-center cursor-pointer"
+                    className="w-full accent-[#0284c7] h-1.5 self-center cursor-pointer"
                   />
                 </div>
               </div>
             </div>
 
-            {/* Action Buttons */}
+            {/* 5. ACTION BUTTONS */}
             <div className="flex items-center gap-1.5 pt-0.5">
               {onOpenCharacterCreator && (
                 <button
                   type="button"
                   data-testid="quick-edit-open-character-creator-btn"
                   onClick={() => onOpenCharacterCreator(selectedAgent)}
-                  className="flex-1 py-1.5 px-2.5 rounded-full bg-gradient-to-r from-[#7c3aed] to-[#6d28d9] hover:from-[#6d28d9] hover:to-[#5b21b6] text-white text-[10px] font-extrabold shadow-xs"
+                  className="flex-1 py-1.5 px-2.5 rounded-full bg-gradient-to-r from-[#0284c7] to-[#0369a1] hover:from-[#0369a1] hover:to-[#075985] text-white text-[10px] font-extrabold shadow-xs"
                 >
-                  🧬 Open Full Character Studio
+                  🧬 Full Character Studio
                 </button>
               )}
               <button
@@ -415,7 +567,7 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
                 }}
                 className="py-1.5 px-2.5 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-800 text-[10px] font-bold"
               >
-                Done
+                Done [F]
               </button>
             </div>
           </div>

@@ -95,7 +95,10 @@ interface HotelViewport3DProps {
   snapGridSize?: number;
   snapToAssetPlacement?: boolean;
   selectedAgentId?: string | null;
+  hoveredAgentId?: string | null;
   onSelectAgent?: (agentId: string | null) => void;
+  onHoverAgent?: (agentId: string | null) => void;
+  onHoverAsset?: (assetId: string | null) => void;
   onMoveSelectedAgentTo?: (agentId: string, x: number, z: number) => void;
   onSelectedAgentScreenPosition?: (pos: { x: number; y: number } | null) => void;
   onPlayerPositionStep?: (pos: [number, number, number], floor: FloorId) => void;
@@ -147,7 +150,10 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
   snapGridSize = DEFAULT_SNAP_GRID_SIZE,
   snapToAssetPlacement = true,
   selectedAgentId = null,
+  hoveredAgentId = null,
   onSelectAgent,
+  onHoverAgent,
+  onHoverAsset,
   onMoveSelectedAgentTo,
   onSelectedAgentScreenPosition,
   onPlayerPositionStep
@@ -211,7 +217,10 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
     snapGridSize,
     snapToAssetPlacement,
     selectedAgentId,
+    hoveredAgentId,
     onSelectAgent,
+    onHoverAgent,
+    onHoverAsset,
     onMoveSelectedAgentTo,
     onSelectedAgentScreenPosition,
     onPlayerPositionStep
@@ -254,7 +263,10 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
       snapGridSize,
       snapToAssetPlacement,
       selectedAgentId,
+      hoveredAgentId,
       onSelectAgent,
+      onHoverAgent,
+      onHoverAsset,
       onMoveSelectedAgentTo,
       onSelectedAgentScreenPosition,
       onPlayerPositionStep
@@ -1337,20 +1349,85 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
           lastPointerY = e.clientY;
           return;
         }
+
+        // Hover / Mouseover detection on characters & assets in Build Mode when not dragging
+        if (!isPointerDown && !st.activeBlueprint && !st.marqueeModeActive) {
+          const hoverHits = _raycaster.intersectObjects(interactableObjects, true);
+          let hitAgentId: string | null = null;
+          let hitAssetId: string | null = null;
+          if (hoverHits.length > 0) {
+            let obj: THREE.Object3D | null = hoverHits[0].object;
+            while (obj && !obj.userData?.assetId && !obj.userData?.agentId) {
+              obj = obj.parent;
+            }
+            if (obj?.userData?.agentId) {
+              hitAgentId = obj.userData.agentId as string;
+            } else if (obj?.userData?.assetId) {
+              hitAssetId = obj.userData.assetId as string;
+            }
+          }
+          renderer.domElement.style.cursor = hitAgentId || hitAssetId ? 'pointer' : 'default';
+          st.onHoverAgent?.(hitAgentId);
+          st.onHoverAsset?.(hitAssetId);
+          if (hitAgentId && st.onSelectedAgentScreenPosition) {
+            const hovAg = st.agents.find((a) => a.id === hitAgentId);
+            if (hovAg) {
+              const rect = renderer.domElement.getBoundingClientRect();
+              _projVec.set(hovAg.position[0] + 0.45, hovAg.position[1] + 1.35, hovAg.position[2]);
+              _projVec.project(camera);
+              const sx = Math.round(((_projVec.x + 1) * 0.5) * rect.width + rect.left + 24);
+              const sy = Math.round(((-_projVec.y + 1) * 0.5) * rect.height + rect.top - 40);
+              st.onSelectedAgentScreenPosition({ x: sx, y: sy });
+            }
+          }
+        }
       } else if (st.mode === 'character' && isPointerDown) {
         const dx = e.clientX - lastPointerX;
         charPreviewRotation += dx * 0.012;
         lastPointerX = e.clientX;
-      } else if (st.mode === 'walkthrough' && isPointerDown) {
-        const dx = e.clientX - lastPointerX;
-        const dy = e.clientY - lastPointerY;
-        playerPoseRef.current.yaw -= dx * 0.0055;
-        playerPoseRef.current.pitch = Math.max(
-          -0.55,
-          Math.min(0.55, playerPoseRef.current.pitch - dy * 0.004)
-        );
-        lastPointerX = e.clientX;
-        lastPointerY = e.clientY;
+      } else if (st.mode === 'walkthrough') {
+        if (isPointerDown) {
+          const dx = e.clientX - lastPointerX;
+          const dy = e.clientY - lastPointerY;
+          playerPoseRef.current.yaw -= dx * 0.0055;
+          playerPoseRef.current.pitch = Math.max(
+            -0.55,
+            Math.min(0.55, playerPoseRef.current.pitch - dy * 0.004)
+          );
+          lastPointerX = e.clientX;
+          lastPointerY = e.clientY;
+        } else {
+          // Hover / Mouseover detection on characters & assets in First-Person Walk Mode
+          _raycaster.setFromCamera(_mouse, camera);
+          const hoverHits = _raycaster.intersectObjects(interactableObjects, true);
+          let hitAgentId: string | null = null;
+          let hitAssetId: string | null = null;
+          if (hoverHits.length > 0 && hoverHits[0].distance <= 9.0) {
+            let obj: THREE.Object3D | null = hoverHits[0].object;
+            while (obj && !obj.userData?.assetId && !obj.userData?.agentId) {
+              obj = obj.parent;
+            }
+            if (obj?.userData?.agentId) {
+              hitAgentId = obj.userData.agentId as string;
+            } else if (obj?.userData?.assetId) {
+              hitAssetId = obj.userData.assetId as string;
+            }
+          }
+          renderer.domElement.style.cursor = hitAgentId || hitAssetId ? 'pointer' : 'default';
+          st.onHoverAgent?.(hitAgentId);
+          st.onHoverAsset?.(hitAssetId);
+          if (hitAgentId && st.onSelectedAgentScreenPosition) {
+            const hovAg = st.agents.find((a) => a.id === hitAgentId);
+            if (hovAg) {
+              const rect = renderer.domElement.getBoundingClientRect();
+              _projVec.set(hovAg.position[0] + 0.45, hovAg.position[1] + 1.35, hovAg.position[2]);
+              _projVec.project(camera);
+              const sx = Math.round(((_projVec.x + 1) * 0.5) * rect.width + rect.left + 24);
+              const sy = Math.round(((-_projVec.y + 1) * 0.5) * rect.height + rect.top - 40);
+              st.onSelectedAgentScreenPosition({ x: sx, y: sy });
+            }
+          }
+        }
       }
     };
 
@@ -1827,8 +1904,9 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
             st.onSelectedAssetScreenPosition({ x: sx, y: sy });
           }
         }
-        if (st.selectedAgentId && st.onSelectedAgentScreenPosition) {
-          const selAg = st.agents.find((a) => a.id === st.selectedAgentId);
+        const activeAgId = st.selectedAgentId || st.hoveredAgentId;
+        if (activeAgId && st.onSelectedAgentScreenPosition) {
+          const selAg = st.agents.find((a) => a.id === activeAgId);
           if (selAg) {
             const rect = renderer.domElement.getBoundingClientRect();
             _projVec.set(selAg.position[0] + 0.45, selAg.position[1] + 1.35, selAg.position[2]);
@@ -2013,44 +2091,6 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
           </span>
         </div>
       )}
-      {/* Active Floor Character Selection Pills (Build Mode & First-Person Walk Mode) */}
-      {(mode === 'architect' || mode === 'walkthrough') &&
-        agents.some((ag) => ag.floor === currentFloor && ag.role !== 'helper_entity') && (
-          <div
-            data-testid="floor-characters-selector-bar"
-            className="fixed bottom-14 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 bg-slate-900/90 backdrop-blur-md border border-violet-500/50 rounded-full px-2.5 py-1 shadow-xl pointer-events-auto"
-          >
-            <span className="text-[10px] font-extrabold text-violet-300 uppercase tracking-wider px-1">
-              🧑 Characters ([F] Params):
-            </span>
-            {agents
-              .filter((ag) => ag.floor === currentFloor && ag.role !== 'helper_entity')
-              .map((ag) => {
-                const isSelected = selectedAgentId === ag.id;
-                return (
-                  <button
-                    key={ag.id}
-                    type="button"
-                    data-testid={`select-floor-character-${ag.id}`}
-                    onClick={() => onSelectAgent?.(ag.id)}
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all flex items-center gap-1 ${
-                      isSelected
-                        ? 'bg-gradient-to-r from-[#7c3aed] to-[#6d28d9] text-white ring-2 ring-amber-300 shadow-xs'
-                        : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
-                    }`}
-                    title={`Click to select ${ag.name} (Room ${ag.roomNumber}), then press [F] for Quick Parameters`}
-                  >
-                    <span>{ag.name}</span>
-                    {ag.activeInteractGesture && ag.activeInteractGesture !== 'idle_observe' && (
-                      <span className="text-[9px] font-mono text-amber-300">
-                        [{ag.activeInteractGesture}]
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-          </div>
-        )}
       {/* Visual Marquee-Select Rectangle Overlay */}
       {marqueeBox && (
         <div

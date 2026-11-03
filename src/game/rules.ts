@@ -135,18 +135,58 @@ export interface FacialRigParams {
   browFurrow: number; // -1 (arched) to 1 (furrowed glare)
   browHeight: number; // -0.05 to +0.08m
   browAsymmetry: number; // -0.5 to +0.5 (single eyebrow arch/raise)
+  browInnerLiftL: number; // -0.025 to +0.035m (medial corrugator / frontalis lift)
+  browInnerLiftR: number; // -0.025 to +0.035m
+  browOuterLiftL: number; // -0.025 to +0.035m (lateral brow arch)
+  browOuterLiftR: number; // -0.025 to +0.035m
+  browRollL: number; // radians tilt of left brow
+  browRollR: number; // radians tilt of right brow
   eyeAperture: number; // 0.3 (squint) to 1.5 (wide shock)
+  blinkAmount: number; // 0 (open) to 1 (closed physiological blink)
+  upperLidDroop: number; // -0.012 (retracted) to +0.016m (hooded/heavy lid)
+  lowerLidSquint: number; // 0 to 1 (orbicularis oculi lower lid rise)
   eyeGazeX: number; // -0.025 (left glance) to +0.025 (right glance)
   eyeGazeY: number; // -0.015 (down) to +0.015 (up)
   pupilDilation: number; // 0.6 (pinpoint fear/focus) to 1.5 (dilated hollow trance)
   eyelidTremor: number; // 0 to 1 micro-twitch
+  nostrilFlare: number; // 0 (relaxed) to 1 (flared alar wings)
+  cheekSquintRaise: number; // 0 to 1 (zygomaticus cheek apple elevation)
   mouthCornerAngle: number; // radians (-0.25 frown to +0.25 smirk)
   mouthAsymmetry: number; // -0.15 to +0.15 crooked smirk/snarl
   mouthAperture: number; // 0 (closed) to 1 (wide agape)
+  upperLipLift: number; // 0 to 1 (levator labii upper lip curl/part)
+  lowerLipDepress: number; // 0 to 1 (depressor labii lower lip roll)
+  lipPucker: number; // 0 (wide) to 1 (orbicularis oris rounded pucker/whisper)
+  lipCornerPullL: number; // -0.015 (frown drop) to +0.018m (smile/smirk pull)
+  lipCornerPullR: number; // -0.015 (frown drop) to +0.018m
   jawDrop: number; // 0 to 0.12m
+  jawPitchRad: number; // 0 to 0.48 rad anatomical TMJ hinge rotation
+  jawLateralShift: number; // -0.008 to +0.008m sideways mandible grind/shift
+  tongueVisible: number; // 0 to 1 (visible during open-mouth speech/shock)
+  headMicroNod: number; // radians subtle organic pitch
+  headMicroTilt: number; // radians subtle organic roll
   cheekHollow: number; // 0 to 1 (sunken noir shadows)
   underEyeBags: boolean;
   ageWrinkles: boolean;
+}
+
+export interface NaturalCharacterAnatomySpec {
+  headShape: CharacterAppearance['headShape'];
+  craniumWidthRatio: number;
+  craniumHeightRatio: number;
+  craniumDepthRatio: number;
+  jawTaperRatio: number;
+  chinProminence: number;
+  zygomaticWidthRatio: number;
+  noseBridgeLength: number;
+  noseTipProjection: number;
+  upperLipCupidBowDepth: number;
+  lowerLipFullness: number;
+  earHelixScale: number;
+  shoulderBreadthRatio: number;
+  waistTaperRatio: number;
+  hipFlareRatio: number;
+  neckSlenderRatio: number;
 }
 
 export type ScheduledActivityGesture =
@@ -2367,9 +2407,108 @@ export function computeScheduledAgentsForTime(
   });
 }
 
+export function computeNaturalCharacterAnatomySpec(
+  appearance?: Partial<
+    Pick<
+      CharacterAppearance,
+      'headShape' | 'archetype' | 'bodyProportionStyle' | 'spineCurvature' | 'mouthStyle'
+    >
+  >
+): NaturalCharacterAnatomySpec {
+  const safeApp = appearance || {};
+  const isElderly =
+    safeApp.archetype === 'Elderly Matron' ||
+    (safeApp.spineCurvature !== undefined && safeApp.spineCurvature >= 20);
+  const isSocialite =
+    safeApp.archetype === 'Eccentric Socialite' ||
+    safeApp.archetype === ' eccentric Socialite';
+
+  let craniumWidthRatio = 0.96;
+  let craniumHeightRatio = 1.12;
+  let craniumDepthRatio = 1.04;
+  let jawTaperRatio = 0.76;
+  let chinProminence = 1.0;
+  let zygomaticWidthRatio = 1.04;
+  let noseBridgeLength = 1.0;
+  let noseTipProjection = 1.0;
+
+  switch (safeApp.headShape) {
+    case 'tall_noir':
+      craniumWidthRatio = 0.91;
+      craniumHeightRatio = 1.18;
+      craniumDepthRatio = 1.05;
+      jawTaperRatio = 0.72;
+      chinProminence = 1.12;
+      zygomaticWidthRatio = 1.1;
+      noseBridgeLength = 1.12;
+      noseTipProjection = 1.08;
+      break;
+    case 'rounded_toon':
+      craniumWidthRatio = 1.03;
+      craniumHeightRatio = 1.05;
+      craniumDepthRatio = 1.02;
+      jawTaperRatio = 0.84;
+      chinProminence = 0.92;
+      zygomaticWidthRatio = 1.06;
+      noseBridgeLength = 0.92;
+      noseTipProjection = 0.96;
+      break;
+    case 'chibi_block':
+      craniumWidthRatio = 1.06;
+      craniumHeightRatio = 1.02;
+      craniumDepthRatio = 1.0;
+      jawTaperRatio = 0.88;
+      chinProminence = 0.88;
+      zygomaticWidthRatio = 1.02;
+      noseBridgeLength = 0.88;
+      noseTipProjection = 0.92;
+      break;
+    case 'proportional_human':
+    default:
+      craniumWidthRatio = 0.96;
+      craniumHeightRatio = 1.12;
+      craniumDepthRatio = 1.04;
+      jawTaperRatio = 0.76;
+      chinProminence = 1.0;
+      zygomaticWidthRatio = 1.05;
+      noseBridgeLength = 1.0;
+      noseTipProjection = 1.0;
+      break;
+  }
+
+  const upperLipCupidBowDepth = isSocialite ? 1.22 : isElderly ? 0.84 : 1.05;
+  const lowerLipFullness = isSocialite ? 1.2 : isElderly ? 0.86 : 1.04;
+  const earHelixScale = isElderly ? 1.08 : 1.0;
+
+  const shoulderBreadthRatio = isSocialite ? 0.96 : isElderly ? 0.94 : 1.06;
+  const waistTaperRatio = isSocialite ? 0.78 : isElderly ? 0.92 : 0.84;
+  const hipFlareRatio = isSocialite ? 1.08 : isElderly ? 1.04 : 0.98;
+  const neckSlenderRatio = isSocialite ? 0.9 : isElderly ? 0.94 : 1.0;
+
+  return {
+    headShape: safeApp.headShape || 'proportional_human',
+    craniumWidthRatio,
+    craniumHeightRatio,
+    craniumDepthRatio,
+    jawTaperRatio,
+    chinProminence,
+    zygomaticWidthRatio,
+    noseBridgeLength,
+    noseTipProjection,
+    upperLipCupidBowDepth,
+    lowerLipFullness,
+    earHelixScale,
+    shoulderBreadthRatio,
+    waistTaperRatio,
+    hipFlareRatio,
+    neckSlenderRatio
+  };
+}
+
 /**
- * Computes micro-articulated facial rig parameters (eyebrow furrow/height/asymmetry, eye aperture,
- * pupil dilation, darting gaze saccades, jaw drop, mouth shape, cheek hollows)
+ * Computes micro-articulated facial rig parameters (eyebrow furrow/height/asymmetry, 4-zone inner/outer brow lift,
+ * eye aperture, physiological blink, lower lid squint, pupil dilation, darting gaze saccades, nostril flare,
+ * cheek apple raise, anatomical TMJ jaw hinge pitch & drop, upper/lower lip curl & pucker, cheek hollows)
  * bound dynamically to expression presets, tenant disposition, and live speech cadence.
  */
 export function computeFacialRigParams(
@@ -2384,14 +2523,22 @@ export function computeFacialRigParams(
   let browHeight = 0;
   let browAsymmetry = 0;
   let eyeAperture = 1.0;
+  let upperLidDroop = isElderly ? 0.0035 : 0;
+  let lowerLidSquint = 0;
   let eyeGazeX = 0;
   let eyeGazeY = 0;
   let pupilDilation = 1.0;
   let eyelidTremor = 0;
+  let nostrilFlare = 0.08;
+  let cheekSquintRaise = 0.05;
   let mouthCornerAngle = 0;
   let mouthAsymmetry = 0;
   let mouthAperture = 0;
+  let upperLipLift = 0;
+  let lowerLipDepress = 0;
+  let lipPucker = 0;
   let jawDrop = 0;
+  let jawLateralShift = 0;
   let cheekHollow = isElderly ? 0.55 : 0.15;
   let underEyeBags = isElderly;
   const ageWrinkles = isElderly;
@@ -2402,21 +2549,32 @@ export function computeFacialRigParams(
       browHeight = -0.022;
       browAsymmetry = 0.22;
       eyeAperture = 0.52;
+      upperLidDroop = 0.008;
+      lowerLidSquint = 0.58;
       eyeGazeX = Math.sin(speechCadencePhase * 0.25) * 0.014;
       pupilDilation = 0.78;
+      nostrilFlare = 0.32;
+      cheekSquintRaise = 0.35;
       mouthCornerAngle = -0.08;
       mouthAsymmetry = 0.06;
       mouthAperture = 0.04;
+      lipPucker = 0.18;
+      jawLateralShift = 0.0025;
       cheekHollow = Math.max(cheekHollow, 0.35);
       break;
     case 'weary':
       browFurrow = -0.35;
       browHeight = 0.025;
       eyeAperture = 0.65;
+      upperLidDroop = 0.011;
+      lowerLidSquint = 0.15;
       eyeGazeY = -0.008;
       pupilDilation = 0.92;
+      nostrilFlare = 0.12;
+      cheekSquintRaise = 0.04;
       mouthCornerAngle = -0.16;
       mouthAperture = 0.08;
+      lowerLipDepress = 0.14;
       cheekHollow = Math.max(cheekHollow, 0.62);
       underEyeBags = true;
       break;
@@ -2424,9 +2582,15 @@ export function computeFacialRigParams(
       browFurrow = -0.68;
       browHeight = 0.058;
       eyeAperture = 1.36;
+      upperLidDroop = -0.008;
+      lowerLidSquint = 0.12;
       pupilDilation = 0.72;
+      nostrilFlare = 0.74;
+      cheekSquintRaise = 0.22;
       mouthCornerAngle = -0.1;
       mouthAperture = 0.62;
+      upperLipLift = 0.42;
+      lowerLipDepress = 0.48;
       jawDrop = 0.048;
       break;
     case 'smirk':
@@ -2434,26 +2598,46 @@ export function computeFacialRigParams(
       browHeight = 0.012;
       browAsymmetry = -0.28;
       eyeAperture = 0.86;
+      upperLidDroop = 0.004;
+      lowerLidSquint = 0.44;
+      nostrilFlare = 0.24;
+      cheekSquintRaise = 0.68;
       mouthCornerAngle = 0.19;
       mouthAsymmetry = 0.14;
       mouthAperture = 0.06;
+      upperLipLift = 0.18;
+      jawLateralShift = 0.003;
       break;
     case 'grimace':
       browFurrow = 0.82;
       browHeight = -0.032;
       eyeAperture = 0.62;
+      upperLidDroop = 0.007;
+      lowerLidSquint = 0.72;
+      nostrilFlare = 0.82;
+      cheekSquintRaise = 0.64;
       mouthCornerAngle = -0.2;
       mouthAperture = 0.36;
+      upperLipLift = 0.65;
+      lowerLipDepress = 0.52;
       jawDrop = 0.025;
+      jawLateralShift = -0.0035;
       cheekHollow = Math.max(cheekHollow, 0.5);
       break;
     case 'shocked':
       browFurrow = -0.88;
       browHeight = 0.078;
       eyeAperture = 1.48;
+      upperLidDroop = -0.011;
+      lowerLidSquint = 0.0;
       pupilDilation = 1.38;
+      nostrilFlare = 0.92;
+      cheekSquintRaise = 0.18;
       mouthCornerAngle = -0.14;
       mouthAperture = 0.86;
+      upperLipLift = 0.55;
+      lowerLipDepress = 0.75;
+      lipPucker = 0.28;
       jawDrop = 0.082;
       break;
     case 'hollow_stare':
@@ -2461,10 +2645,15 @@ export function computeFacialRigParams(
       browFurrow = -0.42;
       browHeight = 0.035;
       eyeAperture = 1.32;
+      upperLidDroop = -0.006;
+      lowerLidSquint = 0.05;
       eyeGazeY = 0.006;
       pupilDilation = 0.62;
+      nostrilFlare = 0.18;
+      cheekSquintRaise = 0.0;
       mouthCornerAngle = -0.06;
       mouthAperture = 0.22;
+      lowerLipDepress = 0.22;
       jawDrop = 0.018;
       cheekHollow = 0.88;
       underEyeBags = true;
@@ -2475,11 +2664,17 @@ export function computeFacialRigParams(
       browHeight = -0.015;
       browAsymmetry = 0.42;
       eyeAperture = 0.58;
+      upperLidDroop = 0.007;
+      lowerLidSquint = 0.54;
       eyeGazeX = 0.022;
       pupilDilation = 0.76;
+      nostrilFlare = 0.38;
+      cheekSquintRaise = 0.36;
       mouthCornerAngle = -0.12;
       mouthAsymmetry = -0.1;
       mouthAperture = 0.02;
+      lipPucker = 0.22;
+      jawLateralShift = -0.003;
       cheekHollow = Math.max(cheekHollow, 0.45);
       break;
     case 'paranoid_twitch':
@@ -2488,13 +2683,19 @@ export function computeFacialRigParams(
       browHeight = 0.018;
       browAsymmetry = Math.sin(speechCadencePhase * 3.5) * 0.35;
       eyeAperture = 1.15;
+      upperLidDroop = -0.003;
+      lowerLidSquint = 0.48;
       eyeGazeX = Math.sin(speechCadencePhase * 2.2) * 0.019;
       eyeGazeY = Math.cos(speechCadencePhase * 1.7) * 0.01;
       pupilDilation = 0.68;
       eyelidTremor = 0.85;
+      nostrilFlare = 0.58 + Math.sin(speechCadencePhase * 4.0) * 0.18;
+      cheekSquintRaise = 0.42;
       mouthCornerAngle = -0.16;
       mouthAsymmetry = 0.09;
       mouthAperture = 0.18;
+      upperLipLift = 0.32;
+      jawLateralShift = Math.sin(speechCadencePhase * 2.8) * 0.004;
       underEyeBags = true;
       break;
     case 'cryptic_whisper':
@@ -2503,11 +2704,16 @@ export function computeFacialRigParams(
       browHeight = 0.01;
       browAsymmetry = 0.25;
       eyeAperture = 0.64;
+      upperLidDroop = 0.008;
+      lowerLidSquint = 0.38;
       eyeGazeX = -0.012;
       pupilDilation = 1.18;
+      nostrilFlare = 0.22;
+      cheekSquintRaise = 0.46;
       mouthCornerAngle = 0.14;
       mouthAsymmetry = 0.11;
       mouthAperture = 0.26;
+      lipPucker = 0.54;
       jawDrop = 0.015;
       break;
     case 'neutral':
@@ -2525,16 +2731,21 @@ export function computeFacialRigParams(
   if (disposition === 'hostile') {
     browFurrow = Math.min(1.0, browFurrow + 0.35);
     eyeAperture = Math.min(eyeAperture, 0.5);
+    lowerLidSquint = Math.min(1.0, lowerLidSquint + 0.35);
     pupilDilation = Math.min(pupilDilation, 0.75);
+    nostrilFlare = Math.min(1.0, nostrilFlare + 0.35);
+    upperLipLift = Math.min(1.0, upperLipLift + 0.25);
     mouthCornerAngle -= 0.12;
   } else if (disposition === 'cold') {
     browFurrow = Math.min(0.8, browFurrow + 0.2);
     eyeAperture = Math.min(eyeAperture, 0.65);
+    lowerLidSquint = Math.min(1.0, lowerLidSquint + 0.2);
     eyeGazeX = eyeGazeX || 0.015;
     mouthCornerAngle -= 0.08;
   } else if (disposition === 'confidant') {
     browFurrow = Math.max(-0.2, browFurrow - 0.2);
     pupilDilation = Math.max(pupilDilation, 1.08);
+    cheekSquintRaise = Math.min(1.0, cheekSquintRaise + 0.28);
     mouthCornerAngle += 0.14;
   }
 
@@ -2542,31 +2753,110 @@ export function computeFacialRigParams(
   if (hasUnansweredQuestions) {
     underEyeBags = true;
     browFurrow = Math.max(-0.45, browFurrow - 0.18);
+    upperLidDroop += 0.004;
     mouthCornerAngle -= 0.09;
   }
 
-  // Live speaking jaw cadence
+  // Live speaking multi-band viseme cadence (jaw syllable pulse + lip rounding + expressive brow sync)
   if (isSpeaking) {
-    const speechPulse = Math.sin(speechCadencePhase * 14);
-    const speechJaw = Math.max(0, speechPulse * 0.05 + 0.03);
+    const syllableWave = Math.sin(speechCadencePhase * 14);
+    const bilabialWave = Math.cos(speechCadencePhase * 9.5);
+    const emphasisWave = Math.sin(speechCadencePhase * 3.8);
+
+    const speechJaw = Math.max(0, syllableWave * 0.05 + 0.03);
     jawDrop = Math.max(jawDrop, speechJaw);
-    mouthAperture = Math.max(mouthAperture, 0.4 + speechPulse * 0.2);
+    mouthAperture = Math.max(mouthAperture, 0.4 + syllableWave * 0.2);
+    upperLipLift = Math.max(upperLipLift, Math.max(0, syllableWave * 0.38 + 0.16));
+    lowerLipDepress = Math.max(lowerLipDepress, Math.max(0, syllableWave * 0.46 + 0.2));
+    lipPucker = Math.max(lipPucker, Math.max(0, bilabialWave * 0.42));
+    nostrilFlare = Math.min(1.0, nostrilFlare + Math.max(0, emphasisWave * 0.18));
+    cheekSquintRaise = Math.min(1.0, cheekSquintRaise + Math.max(0, syllableWave * 0.16));
+    browHeight += Math.max(0, emphasisWave * 0.008);
   }
+
+  // Periodic natural physiological blink & subtle ocular micro-saccades when animated (speechCadencePhase > 0)
+  let blinkAmount = 0;
+  let headMicroNod = 0;
+  let headMicroTilt = 0;
+  if (speechCadencePhase > 0) {
+    // Physiological blink every ~4.2 seconds (speechCadencePhase advances at 12 * timeSec -> cycle period ~50.4 rad)
+    const blinkCycle = ((speechCadencePhase % 50.4) + 50.4) % 50.4;
+    if (blinkCycle > 47.8) {
+      const t = (blinkCycle - 47.8) / 2.6; // 0..1 fast close and smooth open
+      blinkAmount = Math.sin(t * Math.PI);
+    }
+    // Secondary double-blink on every 3rd cycle for lifelike realism
+    const longCycle = ((speechCadencePhase % 151.2) + 151.2) % 151.2;
+    if (longCycle > 144.0 && longCycle < 146.2) {
+      const t2 = (longCycle - 144.0) / 2.2;
+      blinkAmount = Math.max(blinkAmount, Math.sin(t2 * Math.PI) * 0.88);
+    }
+
+    // Subtle organic gaze micro-saccades when not locked in hollow_stare
+    if (expression !== 'hollow_stare') {
+      eyeGazeX += Math.sin(speechCadencePhase * 0.42) * 0.0032;
+      eyeGazeY += Math.cos(speechCadencePhase * 0.31) * 0.0022;
+    }
+
+    headMicroNod = Math.sin(speechCadencePhase * (isSpeaking ? 1.8 : 0.35)) * (isSpeaking ? 0.028 : 0.008);
+    headMicroTilt = Math.cos(speechCadencePhase * (isSpeaking ? 1.1 : 0.24)) * (isSpeaking ? 0.022 : 0.006);
+  }
+
+  // 4-Zone Independent Medial (Inner) & Lateral (Outer) Eyebrow Articulation
+  // Negative browFurrow = worried/surprised arch (inner brow lifts strongly); Positive browFurrow = angry/suspicious scowl (inner brow pulls down, outer arches)
+  const innerFurrowOffset = -browFurrow * 0.014;
+  const outerFurrowOffset = browFurrow > 0 ? browFurrow * 0.006 : -browFurrow * 0.008;
+  const browInnerLiftL = browHeight + innerFurrowOffset;
+  const browInnerLiftR = browHeight + innerFurrowOffset + browAsymmetry * 0.018;
+  const browOuterLiftL = browHeight + outerFurrowOffset - browAsymmetry * 0.008;
+  const browOuterLiftR = browHeight + outerFurrowOffset + browAsymmetry * 0.032;
+
+  const browRollL = -browFurrow * 0.28;
+  const browRollR = browFurrow * 0.28 + browAsymmetry * 0.45;
+
+  // Independent Left & Right Lip Corner Pulls (Zygomaticus major vs Depressor anguli oris)
+  const lipCornerPullL = mouthCornerAngle * 0.035 - mouthAsymmetry * 0.038;
+  const lipCornerPullR = mouthCornerAngle * 0.035 + mouthAsymmetry * 0.038;
+
+  // Anatomical TMJ Jaw Pitch Rotation (hinges backward and downward around condyle)
+  const jawPitchRad = Math.min(0.52, jawDrop * 4.2 + mouthAperture * 0.14);
+  const tongueVisible = mouthAperture > 0.28 || jawDrop > 0.025 ? Math.min(1, (mouthAperture - 0.15) * 1.15) : 0;
 
   return {
     expression,
     browFurrow,
     browHeight,
     browAsymmetry,
+    browInnerLiftL,
+    browInnerLiftR,
+    browOuterLiftL,
+    browOuterLiftR,
+    browRollL,
+    browRollR,
     eyeAperture,
+    blinkAmount,
+    upperLidDroop,
+    lowerLidSquint,
     eyeGazeX,
     eyeGazeY,
     pupilDilation,
     eyelidTremor,
+    nostrilFlare,
+    cheekSquintRaise,
     mouthCornerAngle,
     mouthAsymmetry,
     mouthAperture,
+    upperLipLift,
+    lowerLipDepress,
+    lipPucker,
+    lipCornerPullL,
+    lipCornerPullR,
     jawDrop,
+    jawPitchRad,
+    jawLateralShift,
+    tongueVisible,
+    headMicroNod,
+    headMicroTilt,
     cheekHollow,
     underEyeBags,
     ageWrinkles
@@ -11743,3 +12033,429 @@ export function computeHotelAmbienceSpec(options?: {
     reverbPreset: 'grand_lobby'
   };
 }
+
+export const ARCHITECTURAL_ASSET_CATEGORIES: AssetCategory[] = [
+  'wall',
+  'door',
+  'window_wall',
+  'secret_wall',
+  'floor_tile'
+];
+
+export function isArchitecturalAssetCategory(category: AssetCategory): boolean {
+  return ARCHITECTURAL_ASSET_CATEGORIES.includes(category);
+}
+
+/**
+ * Generates or extracts the default architectural shell (walls, doors, windows, secret walls, floor tiles)
+ * for a given floor layer. Restores the canonical 4-suite corridor & partition layout for residential floors
+ * (including newly added floors like floor4+) and the canonical lobby/basement architecture.
+ */
+export function buildDefaultRoomArchitectureForFloor(
+  floor: FloorId,
+  initialCatalogAssets?: PlacedAsset[]
+): PlacedAsset[] {
+  const fromInitial = Array.isArray(initialCatalogAssets)
+    ? initialCatalogAssets
+        .filter((a) => a.floor === floor && isArchitecturalAssetCategory(a.category))
+        .map((a) =>
+          weatherAssetToLate70sStyle({
+            ...a,
+            position: [...a.position] as [number, number, number],
+            dimensions: [...a.dimensions] as [number, number, number],
+            isOpen: a.category === 'door' ? true : false,
+            openProgress: a.category === 'door' ? 1 : 0,
+            hingeTransitionStartMs: undefined,
+            hingeTransitionFrom: undefined,
+            hingeTransitionTo: undefined
+          })
+        )
+    : [];
+
+  if (floor === 'lobby') {
+    const baseLobbyArch: PlacedAsset[] =
+      fromInitial.length > 0
+        ? [...fromInitial]
+        : [
+            weatherAssetToLate70sStyle({
+              id: 'lobby_carpet_runner',
+              name: 'Threadbare Oxblood Lobby Carpet',
+              category: 'floor_tile',
+              subType: 'floor_runner_slab',
+              floor: 'lobby',
+              roomNumber: 'Main Lobby',
+              position: [0, 0.03, 0.5],
+              dimensions: [5.5, 0.05, 9.0],
+              rotationY: 0,
+              color: '#4a181b',
+              textureId: 'velvet_crimson',
+              collidable: false
+            }),
+            weatherAssetToLate70sStyle({
+              id: 'lobby_west_wall',
+              name: 'Parlor Archway Brick Partition',
+              category: 'wall',
+              subType: 'brick_wall_segment',
+              floor: 'lobby',
+              roomNumber: 'West Parlor Lounge',
+              position: [-5.5, 1.5, -1.5],
+              dimensions: [4.2, 3.0, 0.35],
+              rotationY: 0,
+              color: '#592820',
+              textureId: 'nyc_old_brick',
+              collidable: true
+            }),
+            weatherAssetToLate70sStyle({
+              id: 'secret_lobby_stair',
+              name: 'Concealed Service Wainscoting',
+              category: 'secret_wall',
+              subType: 'secret_bookshelf_door',
+              floor: 'lobby',
+              roomNumber: 'Service Stairwell',
+              position: [5.5, 1.45, -5.2],
+              dimensions: [2.4, 2.9, 0.45],
+              rotationY: 0,
+              color: '#3b2314',
+              textureId: 'oak_parquet',
+              isSecretPassage: true,
+              isOpen: false,
+              collidable: true,
+              inspectText:
+                'A false dark-walnut key-cabinet behind the front desk concealing the chute to the Basement.'
+            })
+          ];
+    return baseLobbyArch;
+  }
+
+  if (floor === 'basement') {
+    const baseBasementArch: PlacedAsset[] =
+      fromInitial.length > 0
+        ? [...fromInitial]
+        : [
+            weatherAssetToLate70sStyle({
+              id: 'secret_basement_vault',
+              name: 'Brick Archway to Sub-Vault 00',
+              category: 'secret_wall',
+              subType: 'secret_bookshelf_door',
+              floor: 'basement',
+              roomNumber: 'Sub-Vault 00',
+              position: [-4.5, 1.45, -2.5],
+              dimensions: [2.6, 2.9, 0.45],
+              rotationY: 0,
+              color: '#4a2019',
+              textureId: 'nyc_old_brick',
+              isSecretPassage: true,
+              isOpen: false,
+              collidable: true
+            })
+          ];
+    if (!baseBasementArch.some((a) => a.category === 'wall')) {
+      baseBasementArch.push(
+        weatherAssetToLate70sStyle({
+          id: 'basement_boiler_partition_wall',
+          name: 'Basement Boiler Brick Partition',
+          category: 'wall',
+          subType: 'brick_wall_segment',
+          floor: 'basement',
+          roomNumber: 'Boiler Room',
+          position: [2.2, 1.5, -1.6],
+          dimensions: [5.0, 3.0, 0.35],
+          rotationY: 0,
+          color: '#592820',
+          textureId: 'nyc_old_brick',
+          collidable: true
+        })
+      );
+    }
+    return baseBasementArch;
+  }
+
+  if (fromInitial.length > 0) {
+    return fromInitial;
+  }
+
+  // Synthesize default 4-suite residential floor architecture for any floor (e.g., floor1, floor2, floor3, floor4+)
+  const matchNum = String(floor).match(/(\d+)/);
+  const floorNum = matchNum ? matchNum[1] : '1';
+  const prefix = `${floorNum}0`;
+
+  const synthesizedArch: PlacedAsset[] = [
+    {
+      id: `${floor}_wall_nw_s`,
+      name: `Room ${prefix}1 South Wall`,
+      category: 'wall',
+      subType: 'interior_plaster_wall',
+      floor,
+      roomNumber: `Room ${prefix}1`,
+      position: [-5.2, 1.5, -1.6],
+      dimensions: [6.8, 3.0, 0.3],
+      rotationY: 0,
+      color: '#8a8170',
+      textureId: 'plaster_cream',
+      collidable: true
+    },
+    {
+      id: `${floor}_wall_ne_s`,
+      name: `Room ${prefix}2 South Wall`,
+      category: 'wall',
+      subType: 'interior_plaster_wall',
+      floor,
+      roomNumber: `Room ${prefix}2`,
+      position: [5.2, 1.5, -1.6],
+      dimensions: [6.8, 3.0, 0.3],
+      rotationY: 0,
+      color: '#8a8170',
+      textureId: 'plaster_cream',
+      collidable: true
+    },
+    {
+      id: `${floor}_wall_sw_n`,
+      name: `Room ${prefix}3 North Wall`,
+      category: 'wall',
+      subType: 'interior_plaster_wall',
+      floor,
+      roomNumber: `Room ${prefix}3`,
+      position: [-5.2, 1.5, 1.6],
+      dimensions: [6.8, 3.0, 0.3],
+      rotationY: 0,
+      color: '#8a8170',
+      textureId: 'plaster_cream',
+      collidable: true
+    },
+    {
+      id: `${floor}_wall_se_n`,
+      name: `Room ${prefix}4 North Wall`,
+      category: 'wall',
+      subType: 'interior_plaster_wall',
+      floor,
+      roomNumber: `Room ${prefix}4`,
+      position: [5.2, 1.5, 1.6],
+      dimensions: [6.8, 3.0, 0.3],
+      rotationY: 0,
+      color: '#8a8170',
+      textureId: 'plaster_cream',
+      collidable: true
+    },
+    {
+      id: `${floor}_door_1`,
+      name: `Suite ${prefix}1 Entry Door`,
+      category: 'door',
+      subType: 'suite_door',
+      floor,
+      roomNumber: `Room ${prefix}1`,
+      position: [-2.6, 1.3, -1.6],
+      dimensions: [1.4, 2.6, 0.32],
+      rotationY: 0,
+      color: '#422616',
+      textureId: 'oak_parquet',
+      isOpen: true,
+      collidable: true,
+      inspectText: `Tarnished brass plate reads: SUITE ${prefix}1.`
+    },
+    {
+      id: `${floor}_door_2`,
+      name: `Suite ${prefix}2 Entry Door`,
+      category: 'door',
+      subType: 'suite_door',
+      floor,
+      roomNumber: `Room ${prefix}2`,
+      position: [2.6, 1.3, -1.6],
+      dimensions: [1.4, 2.6, 0.32],
+      rotationY: 0,
+      color: '#422616',
+      textureId: 'oak_parquet',
+      isOpen: true,
+      collidable: true,
+      inspectText: `Tarnished brass plate reads: SUITE ${prefix}2.`
+    },
+    {
+      id: `${floor}_door_3`,
+      name: `Suite ${prefix}3 Entry Door`,
+      category: 'door',
+      subType: 'suite_door',
+      floor,
+      roomNumber: `Room ${prefix}3`,
+      position: [-2.6, 1.3, 1.6],
+      dimensions: [1.4, 2.6, 0.32],
+      rotationY: 0,
+      color: '#422616',
+      textureId: 'oak_parquet',
+      isOpen: true,
+      collidable: true,
+      inspectText: `Tarnished brass plate reads: SUITE ${prefix}3.`
+    },
+    {
+      id: `${floor}_door_4`,
+      name: `Suite ${prefix}4 Entry Door`,
+      category: 'door',
+      subType: 'suite_door',
+      floor,
+      roomNumber: `Room ${prefix}4`,
+      position: [2.6, 1.3, 1.6],
+      dimensions: [1.4, 2.6, 0.32],
+      rotationY: 0,
+      color: '#422616',
+      textureId: 'oak_parquet',
+      isOpen: true,
+      collidable: true,
+      inspectText: `Tarnished brass plate reads: SUITE ${prefix}4.`
+    },
+    {
+      id: `${floor}_secret_n`,
+      name: `Hidden Bookshelf Passage (${prefix}1 ↔ ${prefix}2)`,
+      category: 'secret_wall',
+      subType: 'secret_bookshelf_door',
+      floor,
+      roomNumber: `Room ${prefix}1`,
+      position: [0, 1.45, -5.4],
+      dimensions: [2.2, 2.9, 0.45],
+      rotationY: Math.PI / 2,
+      color: '#3b2314',
+      textureId: 'oak_parquet',
+      isSecretPassage: true,
+      isOpen: false,
+      collidable: true
+    },
+    {
+      id: `${floor}_secret_s`,
+      name: `Pivoting Brick Panel (${prefix}3 ↔ ${prefix}4)`,
+      category: 'secret_wall',
+      subType: 'secret_bookshelf_door',
+      floor,
+      roomNumber: `Room ${prefix}4`,
+      position: [0, 1.45, 5.4],
+      dimensions: [2.2, 2.9, 0.45],
+      rotationY: Math.PI / 2,
+      color: '#4a2019',
+      textureId: 'nyc_old_brick',
+      isSecretPassage: true,
+      isOpen: false,
+      collidable: true
+    },
+    {
+      id: `${floor}_rug_center`,
+      name: `Floor ${floorNum} Threadbare Corridor Runner`,
+      category: 'floor_tile',
+      subType: 'floor_runner_slab',
+      floor,
+      roomNumber: 'Corridor',
+      position: [0, 0.03, 0],
+      dimensions: [14.0, 0.05, 2.2],
+      rotationY: 0,
+      color: '#4a181b',
+      textureId: 'velvet_crimson',
+      collidable: false
+    }
+  ];
+
+  return weatherAssetsListToLate70sStyle(synthesizedArch);
+}
+
+export interface ResetRoomResult {
+  updatedAssets: PlacedAsset[];
+  restoredArchitecture: PlacedAsset[];
+  clearedCount: number;
+  restoredCount: number;
+  floor: FloorId;
+  roomLabel: string;
+  message: string;
+}
+
+/**
+ * Pure helper for the 'Reset Room' button in UnifiedBottomDock:
+ * Clears all assets currently placed in the active room/floor (furniture, appliances, props, lighting, custom objects,
+ * and extra user-placed walls) and restores the default architecture (walls, doors, windows, secret passages, floor tiles).
+ */
+export function resetRoomToDefaultArchitecture(params: {
+  allAssets: PlacedAsset[];
+  currentFloor: FloorId;
+  activeRoomLabel?: string | null;
+  initialCatalogAssets?: PlacedAsset[];
+  onlyTargetSubRoom?: boolean;
+}): ResetRoomResult {
+  const {
+    allAssets,
+    currentFloor,
+    activeRoomLabel,
+    initialCatalogAssets,
+    onlyTargetSubRoom = false
+  } = params;
+
+  const safeAll = Array.isArray(allAssets) ? allAssets : [];
+  const defaultFloorArch = buildDefaultRoomArchitectureForFloor(
+    currentFloor,
+    initialCatalogAssets
+  );
+
+  // If onlyTargetSubRoom is explicitly requested for a specific named room (e.g., "Room 101")
+  const trimmedRoom = (activeRoomLabel || '').trim();
+  const hasSpecificSubRoom =
+    onlyTargetSubRoom &&
+    trimmedRoom.length > 0 &&
+    !trimmedRoom.includes('Layer') &&
+    defaultFloorArch.some(
+      (a) => (a.roomNumber || '').toLowerCase() === trimmedRoom.toLowerCase()
+    );
+
+  if (hasSpecificSubRoom) {
+    const targetRoomLower = trimmedRoom.toLowerCase();
+    const removedAssets = safeAll.filter(
+      (a) =>
+        a.floor === currentFloor &&
+        (a.roomNumber || '').toLowerCase() === targetRoomLower
+    );
+    const remainingAssets = safeAll.filter(
+      (a) =>
+        !(
+          a.floor === currentFloor &&
+          (a.roomNumber || '').toLowerCase() === targetRoomLower
+        )
+    );
+    const restoredArchitecture = defaultFloorArch.filter(
+      (a) => (a.roomNumber || '').toLowerCase() === targetRoomLower
+    );
+
+    return {
+      updatedAssets: [...remainingAssets, ...restoredArchitecture],
+      restoredArchitecture,
+      clearedCount: removedAssets.length,
+      restoredCount: restoredArchitecture.length,
+      floor: currentFloor,
+      roomLabel: trimmedRoom,
+      message: `🔄 Reset Room (${trimmedRoom}): Cleared ${removedAssets.length} placed asset(s) and restored ${restoredArchitecture.length} default architectural element(s).`
+    };
+  }
+
+  // Standard Reset Room behavior: clears all currently placed assets on the active room/floor and restores default architecture
+  const floorAssetsBefore = safeAll.filter((a) => a.floor === currentFloor);
+  const nonArchitecturalOrCustomClearedCount = floorAssetsBefore.filter(
+    (a) =>
+      !isArchitecturalAssetCategory(a.category) ||
+      a.id.startsWith('custom_') ||
+      a.id.startsWith('ai3d_') ||
+      a.id.startsWith('desc3d_') ||
+      a.id.includes('_copy_') ||
+      a.id.includes('_paste_')
+  ).length;
+  const clearedCount = Math.max(
+    nonArchitecturalOrCustomClearedCount,
+    floorAssetsBefore.length
+  );
+
+  const otherFloorsAssets = safeAll.filter((a) => a.floor !== currentFloor);
+  const effectiveLabel =
+    trimmedRoom && !trimmedRoom.includes('Layer')
+      ? `${trimmedRoom} (${currentFloor.toUpperCase()})`
+      : currentFloor.toUpperCase();
+
+  return {
+    updatedAssets: [...otherFloorsAssets, ...defaultFloorArch],
+    restoredArchitecture: defaultFloorArch,
+    clearedCount,
+    restoredCount: defaultFloorArch.length,
+    floor: currentFloor,
+    roomLabel: effectiveLabel,
+    message: `🔄 Reset Room (${effectiveLabel}): Cleared ${clearedCount} placed asset(s) and restored ${defaultFloorArch.length} default architectural element(s)!`
+  };
+}
+

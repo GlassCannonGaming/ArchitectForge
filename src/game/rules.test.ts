@@ -3940,5 +3940,167 @@ test('Shared Character Interact Animations, Batch Condition Variant Swap, Invisi
   assert.equal(parsedQueue[1].categoryHint, 'lighting');
 });
 
+test('Reset Room: clears all placed assets in the active room/floor and restores default architecture', async () => {
+  const {
+    isArchitecturalAssetCategory,
+    buildDefaultRoomArchitectureForFloor,
+    resetRoomToDefaultArchitecture,
+    INITIAL_PLACED_ASSETS
+  } = await import('./rules');
 
+  assert.equal(isArchitecturalAssetCategory('wall'), true);
+  assert.equal(isArchitecturalAssetCategory('door'), true);
+  assert.equal(isArchitecturalAssetCategory('window_wall'), true);
+  assert.equal(isArchitecturalAssetCategory('secret_wall'), true);
+  assert.equal(isArchitecturalAssetCategory('floor_tile'), true);
+  assert.equal(isArchitecturalAssetCategory('furniture'), false);
+  assert.equal(isArchitecturalAssetCategory('clue'), false);
+
+  const defaultFloor1Arch = buildDefaultRoomArchitectureForFloor('floor1', INITIAL_PLACED_ASSETS);
+  assert.equal(defaultFloor1Arch.length >= 6, true);
+  assert.equal(defaultFloor1Arch.every((a) => isArchitecturalAssetCategory(a.category)), true);
+  assert.equal(defaultFloor1Arch.every((a) => a.floor === 'floor1'), true);
+
+  // Place custom furniture + clues on floor1 and floor2
+  const dirtyAssets: PlacedAsset[] = [
+    {
+      id: 'f1_custom_sofa',
+      name: 'Tufted Sofa',
+      category: 'furniture',
+      subType: 'velvet_sofa',
+      floor: 'floor1',
+      roomNumber: 'Room 101',
+      position: [1, 0.45, 1],
+      dimensions: [2.2, 0.9, 0.95],
+      rotationY: 0,
+      color: '#4a121a',
+      textureId: 'velvet_crimson',
+      collidable: true
+    },
+    {
+      id: 'f1_custom_clue',
+      name: 'Evidence Ledger',
+      category: 'clue',
+      subType: 'guest_ledger',
+      floor: 'floor1',
+      roomNumber: 'Room 101',
+      position: [2, 0.9, 1],
+      dimensions: [0.45, 0.12, 0.35],
+      rotationY: 0,
+      color: '#2b1b12',
+      textureId: 'aged_brass',
+      collidable: false
+    },
+    {
+      id: 'f2_preserved_bed',
+      name: 'Floor 2 Bed',
+      category: 'furniture',
+      subType: 'canopy_bed',
+      floor: 'floor2',
+      roomNumber: 'Suite 202',
+      position: [0, 0.5, 0],
+      dimensions: [2.0, 1.8, 2.2],
+      rotationY: 0,
+      color: '#3f161b',
+      textureId: 'velvet_crimson',
+      collidable: true
+    }
+  ];
+
+  const resetRes = resetRoomToDefaultArchitecture({
+    allAssets: dirtyAssets,
+    currentFloor: 'floor1',
+    activeRoomLabel: 'Room 101',
+    initialCatalogAssets: INITIAL_PLACED_ASSETS
+  });
+
+  assert.equal(resetRes.clearedCount, 2);
+  assert.equal(resetRes.restoredCount >= 6, true);
+  // Floor 2 asset must remain untouched
+  assert.equal(resetRes.updatedAssets.some((a) => a.id === 'f2_preserved_bed'), true);
+  // Floor 1 non-architectural assets must be cleared
+  assert.equal(resetRes.updatedAssets.some((a) => a.id === 'f1_custom_sofa'), false);
+  assert.equal(resetRes.updatedAssets.some((a) => a.id === 'f1_custom_clue'), false);
+  // Floor 1 must now contain only restored default architectural assets
+  const floor1After = resetRes.updatedAssets.filter((a) => a.floor === 'floor1');
+  assert.equal(floor1After.length, resetRes.restoredCount);
+  assert.equal(floor1After.every((a) => isArchitecturalAssetCategory(a.category)), true);
+});
+
+test('Natural Character Anatomy Spec & Articulated Human Facial Rig (4-Zone Brows, Blink/Squint Eyelids, Nostril Flare, Cheek Raise, TMJ Jaw & Cupid Bow Lips)', async () => {
+  const {
+    computeNaturalCharacterAnatomySpec,
+    computeFacialRigParams,
+    computeSkeletonPose,
+    getArchetypeDefaults
+  } = await import('./rules');
+  const { buildCharacterToonGroup, applySkeletonPoseToRig } = await import('./procedural3D');
+
+  // 1. Verify natural character anatomy spec across head shapes and archetypes
+  const clerkDefaults = getArchetypeDefaults('Detective Clerk') as any;
+  const socialiteDefaults = getArchetypeDefaults('Eccentric Socialite') as any;
+  const matronDefaults = getArchetypeDefaults('Elderly Matron') as any;
+
+  const propSpec = computeNaturalCharacterAnatomySpec({
+    ...clerkDefaults,
+    headShape: 'proportional_human'
+  });
+  const noirSpec = computeNaturalCharacterAnatomySpec({
+    ...clerkDefaults,
+    headShape: 'tall_noir'
+  });
+  const socialiteSpec = computeNaturalCharacterAnatomySpec(socialiteDefaults);
+
+  assert.equal(noirSpec.craniumHeightRatio > propSpec.craniumHeightRatio, true);
+  assert.equal(noirSpec.jawTaperRatio < propSpec.jawTaperRatio, true);
+  assert.equal(socialiteSpec.upperLipCupidBowDepth > propSpec.upperLipCupidBowDepth, true);
+  assert.equal(socialiteSpec.waistTaperRatio < propSpec.waistTaperRatio, true);
+
+  // 2. Verify articulated facial rig parameters across expressions, speech visemes, and physiological blink
+  const neutralRig = computeFacialRigParams('neutral', undefined, false, 0, false, false);
+  assert.equal(neutralRig.blinkAmount, 0, 'Static phase 0 has 0 blink');
+  assert.equal(neutralRig.mouthAperture, 0);
+  assert.equal(neutralRig.tongueVisible, 0);
+
+  const smirkRig = computeFacialRigParams('smirk', 'confidant', false, 0, false, false);
+  assert.equal(smirkRig.cheekSquintRaise > 0.6, true, 'Smirk raises zygomatic cheek apples');
+  assert.equal(smirkRig.lowerLidSquint > 0.3, true, 'Smirk engages lower eyelid squint');
+  assert.equal(smirkRig.lipCornerPullR > smirkRig.lipCornerPullL, true, 'Asymmetric smirk pulls right lip corner higher');
+
+  const shockedRig = computeFacialRigParams('shocked', undefined, false, 0, false, false);
+  assert.equal(shockedRig.jawPitchRad > 0.25, true, 'Shocked expression hinges TMJ jaw pitch');
+  assert.equal(shockedRig.nostrilFlare > 0.8, true, 'Shocked expression flares nostrils');
+  assert.equal(shockedRig.browInnerLiftL > 0.05, true, 'Shocked expression lifts inner brows');
+  assert.equal(shockedRig.tongueVisible > 0.5, true, 'Wide open mouth reveals tongue');
+
+  // Speaking multi-band viseme cadence + physiological blink phase (49.1 rad is mid-blink in 50.4 rad cycle)
+  const speakingBlinkRig = computeFacialRigParams('neutral', undefined, true, 49.1, false, false);
+  assert.equal(speakingBlinkRig.blinkAmount > 0.5, true, 'Physiological blink activates during blink window');
+  assert.equal(speakingBlinkRig.mouthAperture >= 0.2, true, 'Speaking animates mouth aperture');
+  assert.equal(speakingBlinkRig.upperLipLift > 0, true, 'Speaking lifts upper lip');
+  assert.equal(speakingBlinkRig.lowerLipDepress > 0, true, 'Speaking depresses lower lip');
+
+  // 3. Verify 3D character mesh & articulated facial rig nodes in buildCharacterToonGroup + applySkeletonPoseToRig
+  const rigGroup = buildCharacterToonGroup(matronDefaults, false);
+  const facial = rigGroup.userData.facial;
+  assert.ok(facial, 'Character rig exposes userData.facial');
+  assert.ok(facial.browInnerL && facial.browInnerR, 'Medial brow rig nodes exist');
+  assert.ok(facial.browOuterL && facial.browOuterR, 'Lateral brow rig nodes exist');
+  assert.ok(facial.upperLidL && facial.upperLidR, 'Curved upper eyelid rig nodes exist');
+  assert.ok(facial.lowerLidL && facial.lowerLidR, 'Curved lower eyelid rig nodes exist');
+  assert.ok(facial.eyelashL && facial.eyelashR, 'Upper eyelash rig nodes exist');
+  assert.ok(facial.corneaGlintL && facial.corneaGlintR, 'Corneal specular glint nodes exist');
+  assert.ok(facial.nostrilWingL && facial.nostrilWingR, 'Articulated alar nostril wing nodes exist');
+  assert.ok(facial.cheekAppleL && facial.cheekAppleR, 'Articulated zygomatic cheek apple nodes exist');
+  assert.ok(facial.upperLipGroup && facial.lowerLipGroup, 'Cupid bow upper and lower lip groups exist');
+  assert.ok(facial.upperTeethMesh && facial.lowerTeethMesh && facial.tongueMesh, 'Oral cavity teeth and tongue meshes exist');
+
+  const basePose = computeSkeletonPose(1.2, false, 25, true, true, 'idle_observe');
+  applySkeletonPoseToRig(rigGroup, basePose, shockedRig, { updateBody: true, updateFace: true });
+
+  assert.equal(facial.jawPivot.rotation.x > 0.08, true, 'TMJ jawPivot rotates on X axis when jaw drops');
+  assert.equal(facial.nostrilWingR.position.x > 0.013, true, 'Right nostril wing flares outward');
+  assert.equal(facial.cheekAppleL.position.y > 0.106, true, 'Left cheek apple elevates');
+  assert.equal(facial.tongueMesh.visible, true, 'Tongue mesh becomes visible when jaw opens wide');
+});
 
