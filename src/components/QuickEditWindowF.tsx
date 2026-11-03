@@ -19,7 +19,9 @@ import {
   ScheduledActivityGesture,
   swapAssetConditionVariant,
   swapAssetVisualDesign,
-  TexturePresetId
+  TexturePresetId,
+  isTvOrCrtScreenAsset,
+  LIGHTING_PRESETS
 } from '../game/rules';
 import { AssetBlueprint } from '../game/hotelData';
 
@@ -976,6 +978,142 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
               })}
             </div>
           </div>
+
+          {/* 2D. LIGHT EMISSION INTENSITY SLIDER (For light-emitting assets) */}
+          {(primaryAsset.isLightEmitting ||
+            primaryAsset.category === 'lighting' ||
+            isTvOrCrtScreenAsset(primaryAsset) ||
+            /lamp|sconce|chandelier|light|exit_sign|crt|tv|terminal|computer|neon/i.test(
+              `${primaryAsset.name} ${primaryAsset.subType} ${primaryAsset.category}`
+            )) && (
+            <div
+              data-testid="quick-edit-emission-intensity-panel"
+              className="bg-amber-50/90 border border-amber-200 rounded-2xl p-2 space-y-1"
+            >
+              <div className="flex justify-between text-[10px] font-bold">
+                <span className="text-amber-950">💡 Light Emission Intensity</span>
+                <span className="font-mono text-amber-800">
+                  {Number(primaryAsset.emissionIntensity ?? primaryAsset.lightIntensity ?? 1.0).toFixed(1)}x
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0.1}
+                max={3.0}
+                step={0.1}
+                data-testid="quick-edit-emission-intensity-slider"
+                value={primaryAsset.emissionIntensity ?? primaryAsset.lightIntensity ?? 1.0}
+                onChange={(e) =>
+                  safeBatchModify({
+                    emissionIntensity: Number(e.target.value),
+                    lightIntensity: Number(e.target.value),
+                    isLightEmitting: true
+                  })
+                }
+                className="w-full accent-amber-600 h-1.5 cursor-pointer"
+              />
+            </div>
+          )}
+
+          {/* 2E. LIGHTING PRESETS DROPDOWN */}
+          {(primaryAsset.isLightEmitting ||
+            primaryAsset.category === 'lighting' ||
+            isTvOrCrtScreenAsset(primaryAsset) ||
+            /lamp|sconce|chandelier|light|exit_sign|crt|tv|terminal|computer|neon/i.test(
+              `${primaryAsset.name} ${primaryAsset.subType} ${primaryAsset.category}`
+            )) && (
+            <div
+              data-testid="quick-edit-lighting-presets-panel"
+              className="bg-amber-50/90 border border-amber-200 rounded-2xl p-2 space-y-1.5"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-950">
+                  ✨ Lighting Presets
+                </span>
+                <span className="text-[9px] font-mono text-amber-800">Auto-updates color &amp; intensity</span>
+              </div>
+              <select
+                aria-label="Lighting Preset Selection"
+                data-testid="quick-edit-lighting-preset-select"
+                value={primaryAsset.lightingPreset || 'custom'}
+                onChange={(e) => {
+                  const presetId = e.target.value;
+                  const found = LIGHTING_PRESETS.find((p) => p.id === presetId);
+                  if (found) {
+                    safeBatchModify({
+                      lightingPreset: presetId,
+                      emissionIntensity: found.intensity,
+                      lightIntensity: found.intensity,
+                      color: found.color,
+                      isLightEmitting: true
+                    });
+                  } else {
+                    safeBatchModify({ lightingPreset: 'custom', isLightEmitting: true });
+                  }
+                }}
+                className="w-full bg-white border border-amber-300 rounded-lg px-2 py-1 text-[10px] font-bold text-slate-800"
+              >
+                <option value="custom">-- Custom Preset --</option>
+                {LIGHTING_PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label} ({p.intensity}x, {p.color})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* 2F. CUSTOM ANIMATION FPS OVERRIDE */}
+          {(primaryAsset.isLightEmitting ||
+            primaryAsset.category === 'lighting' ||
+            isTvOrCrtScreenAsset(primaryAsset) ||
+            unkemptOrAged ||
+            /lamp|sconce|chandelier|light|exit_sign|crt|tv|terminal|computer|neon/i.test(
+              `${primaryAsset.name} ${primaryAsset.subType} ${primaryAsset.category}`
+            )) && (
+            <div
+              data-testid="quick-edit-custom-fps-panel"
+              className="bg-amber-50/90 border border-amber-200 rounded-2xl p-2 space-y-1.5"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-950">
+                  ⚡ Custom Flicker FPS Override
+                </span>
+                <span className="text-[9px] font-mono text-amber-800">
+                  {primaryAsset.customAnimationFps ? `${primaryAsset.customAnimationFps} FPS` : `Global (${globalAnimationFps} FPS)`}
+                </span>
+              </div>
+              <div className="grid grid-cols-5 gap-1">
+                {[
+                  { label: 'Global', val: 0 },
+                  { label: '6 FPS', val: 6 },
+                  { label: '12 FPS', val: 12 },
+                  { label: '24 FPS', val: 24 },
+                  { label: '60 FPS', val: 60 }
+                ].map((opt) => {
+                  const isSelected = (opt.val === 0 && !primaryAsset.customAnimationFps) || primaryAsset.customAnimationFps === opt.val;
+                  return (
+                    <button
+                      key={opt.label}
+                      type="button"
+                      onClick={() =>
+                        safeBatchModify({
+                          customAnimationFps: opt.val === 0 ? undefined : opt.val
+                        })
+                      }
+                      className={`py-1 rounded text-[9px] font-bold transition-all ${
+                        isSelected
+                          ? 'bg-amber-600 text-white shadow-2xs'
+                          : 'bg-white text-amber-900 border border-amber-300 hover:bg-amber-100'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* 2C. UNIVERSAL "PRISTINE / UNKEMPT / UPDATED (90S)" CONDITION VARIANT TOGGLE FOR ALL ASSETS */}
           <div

@@ -2059,6 +2059,15 @@ test('Blueprint Tagging & Multi-Faceted Asset Search support tag normalization, 
   const lobbyRoomBps = searchAndFilterRoomBlueprints(INITIAL_ROOM_BLUEPRINTS, 'concierge', ['lobby']);
   assert.equal(lobbyRoomBps.length, 1);
   assert.equal(lobbyRoomBps[0].id, 'bp_room_lobby_registry');
+
+  // Room Blueprint size filtering
+  const compactBps = searchAndFilterRoomBlueprints(INITIAL_ROOM_BLUEPRINTS, '', 'all', 'compact');
+  assert.equal(compactBps.every((bp) => Math.max(bp.boundingSize[0], bp.boundingSize[1]) < 5.0), true);
+
+  // Room Blueprint name & description search filtering
+  const descSearchBps = searchAndFilterRoomBlueprints(INITIAL_ROOM_BLUEPRINTS, 'soot-stained brick');
+  assert.equal(descSearchBps.length >= 1, true);
+  assert.equal(descSearchBps.some((bp) => bp.name.includes('Front Desk')), true);
 });
 
 test('Top-Right Undo Action Cluster Removal & Silent Studio Audio Policy: no auto-sounds on camera movement, sound section assigns sounds to assets', async () => {
@@ -4103,4 +4112,158 @@ test('Natural Character Anatomy Spec & Articulated Human Facial Rig (4-Zone Brow
   assert.equal(facial.cheekAppleL.position.y > 0.106, true, 'Left cheek apple elevates');
   assert.equal(facial.tongueMesh.visible, true, 'Tongue mesh becomes visible when jaw opens wide');
 });
+
+test('Light-Emitting Assets & Dynamic Lighting System: computeAssetInteractionVisualState for lamps, TVs, and light fixtures', async () => {
+  const { computeAssetInteractionVisualState } = await import('./rules');
+
+  const lampAsset = {
+    id: 'lamp_1',
+    name: 'Banker Desk Lamp',
+    category: 'lighting' as const,
+    subType: 'banker_desk_lamp',
+    floor: 'floor1' as const,
+    position: [0, 0, 0] as [number, number, number],
+    dimensions: [0.4, 0.6, 0.4] as [number, number, number],
+    rotationY: 0,
+    color: '#6b5634',
+    textureId: 'aged_brass' as const,
+    collidable: true,
+    isActivated: true
+  };
+
+  const lampState = computeAssetInteractionVisualState(lampAsset);
+  assert.equal(lampState.isInteractive, true);
+  assert.equal(lampState.interactionKind, 'lamp_light');
+  assert.equal(lampState.emitsLight, true);
+  assert.equal(lampState.lightIntensity > 0, true);
+  assert.equal(Boolean(lampState.lightColorHex), true);
+
+  const tvAsset = {
+    id: 'tv_1',
+    name: '1990s Trinitron CRT TV',
+    category: 'appliance' as const,
+    subType: 'apt_tv_crt_90s_black',
+    floor: 'floor1' as const,
+    position: [0, 0, 0] as [number, number, number],
+    dimensions: [0.95, 0.72, 0.65] as [number, number, number],
+    rotationY: 0,
+    color: '#18181b',
+    textureId: 'plaster_cream' as const,
+    collidable: true,
+    isActivated: true
+  };
+
+  const tvState = computeAssetInteractionVisualState(tvAsset);
+  assert.equal(tvState.isInteractive, true);
+  assert.equal(tvState.interactionKind, 'tv_screen');
+  assert.equal(tvState.emitsLight, true);
+  assert.equal(tvState.screenState, 'white_on');
+  assert.equal(tvState.lightIntensity > 1.0, true);
+});
+
+test('Light-Emitting Asset Pulse & Flicker Animation Synchronized to globalAnimationFps', async () => {
+  const { sampleLightEmittingPulseIntensity } = await import('./rules');
+
+  const sample60fps = sampleLightEmittingPulseIntensity(1.5, 60, 'test_asset_01');
+  assert.equal(typeof sample60fps.pulseMultiplier, 'number');
+  assert.equal(sample60fps.pulseMultiplier >= 0.75 && sample60fps.pulseMultiplier <= 1.25, true);
+  assert.equal(sample60fps.stepIndex, Math.floor(1.5 * 60));
+
+  const sample12fps = sampleLightEmittingPulseIntensity(1.5, 12, 'test_asset_01');
+  assert.equal(sample12fps.stepIndex, Math.floor(1.5 * 12));
+  assert.equal(sample12fps.pulseMultiplier >= 0.75 && sample12fps.pulseMultiplier <= 1.25, true);
+});
+
+test('Light emission intensity batch modification and emitter scaling', async () => {
+  const { batchModifySelectedAssets, extractMoodLightEmittersFromAssets } = await import('./rules');
+
+  const asset = {
+    id: 'light_test_1',
+    name: 'Desk Lamp',
+    category: 'lighting' as const,
+    subType: 'desk_lamp',
+    floor: 'floor1' as const,
+    position: [0, 0, 0] as [number, number, number],
+    dimensions: [0.5, 0.5, 0.5] as [number, number, number],
+    rotationY: 0,
+    color: '#000',
+    textureId: 'aged_brass' as const,
+    collidable: true
+  };
+
+  const modified = batchModifySelectedAssets([asset], ['light_test_1'], {
+    emissionIntensity: 2.2,
+    isLightEmitting: true
+  });
+
+  assert.equal(modified[0].emissionIntensity, 2.2);
+  assert.equal(modified[0].isLightEmitting, true);
+
+  const emitters = extractMoodLightEmittersFromAssets('floor1', modified);
+  const lampEmitter = emitters.find((e) => e.id.includes('light_test_1'));
+  assert.ok(lampEmitter);
+  assert.equal(lampEmitter.baseIntensity, Number((1.12 * 2.2).toFixed(2)));
+});
+
+test('Pre-configured lighting presets update asset intensity and color values', async () => {
+  const { batchModifySelectedAssets, LIGHTING_PRESETS } = await import('./rules');
+
+  const asset = {
+    id: 'light_preset_test',
+    name: 'Ceiling Sconce',
+    category: 'lighting' as const,
+    subType: 'wall_sconce',
+    floor: 'floor1' as const,
+    position: [0, 0, 0] as [number, number, number],
+    dimensions: [0.4, 0.4, 0.4] as [number, number, number],
+    rotationY: 0,
+    color: '#000',
+    textureId: 'aged_brass' as const,
+    collidable: true
+  };
+
+  const brightOfficePreset = LIGHTING_PRESETS.find((p) => p.id === 'bright_office');
+  assert.ok(brightOfficePreset);
+
+  const modified = batchModifySelectedAssets([asset], ['light_preset_test'], {
+    lightingPreset: brightOfficePreset.id,
+    emissionIntensity: brightOfficePreset.intensity,
+    lightIntensity: brightOfficePreset.intensity,
+    color: brightOfficePreset.color,
+    isLightEmitting: true
+  });
+
+  assert.equal(modified[0].lightingPreset, 'bright_office');
+  assert.equal(modified[0].emissionIntensity, 2.0);
+  assert.equal(modified[0].color, '#f8fafc');
+  assert.equal(modified[0].isLightEmitting, true);
+});
+
+test('Custom flicker FPS override configures individual light animation frequency without affecting scene', async () => {
+  const { batchModifySelectedAssets } = await import('./rules');
+
+  const asset = {
+    id: 'fps_override_test',
+    name: 'Flickering Fluorescent',
+    category: 'lighting' as const,
+    subType: 'fluorescent_tube',
+    floor: 'floor1' as const,
+    position: [0, 0, 0] as [number, number, number],
+    dimensions: [1.2, 0.2, 0.2] as [number, number, number],
+    rotationY: 0,
+    color: '#fff',
+    textureId: 'industrial_concrete' as const,
+    collidable: true
+  };
+
+  const modified = batchModifySelectedAssets([asset], ['fps_override_test'], {
+    customAnimationFps: 12,
+    isLightEmitting: true
+  });
+
+  assert.equal(modified[0].customAnimationFps, 12);
+  assert.equal(modified[0].isLightEmitting, true);
+});
+
+
 

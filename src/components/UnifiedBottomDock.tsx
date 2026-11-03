@@ -20,6 +20,7 @@ import {
   collectBlueprintTagCounts,
   searchAndFilterCatalogBlueprints,
   searchAndFilterRoomBlueprints,
+  RoomSizeFilterCategory,
   assignSoundToAssetOrBlueprint,
   AssetSet,
   AssetClipboardPayload,
@@ -259,6 +260,8 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
   const [bpTagsInput, setBpTagsInput] = useState<string>('parlor, late-70s, modular');
   const [roomBpSearchQuery, setRoomBpSearchQuery] = useState<string>('');
   const [activeRoomBpTags, setActiveRoomBpTags] = useState<string[]>([]);
+  const [roomSizeFilter, setRoomSizeFilter] = useState<RoomSizeFilterCategory>('all');
+  const [roomBpTagEditorOpenId, setRoomBpTagEditorOpenId] = useState<string | null>(null);
   const [roomBpInlineTagDrafts, setRoomBpInlineTagDrafts] = useState<Record<string, string>>({});
   const [bpOffsetX, setBpOffsetX] = useState<number>(0);
   const [bpOffsetZ, setBpOffsetZ] = useState<number>(0);
@@ -308,7 +311,8 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
   const filteredRoomBlueprints = searchAndFilterRoomBlueprints(
     roomBlueprints,
     roomBpSearchQuery,
-    activeRoomBpTags
+    activeRoomBpTags,
+    roomSizeFilter
   );
 
   const handleToggleCatalogTagFilter = (tag: string) => {
@@ -626,6 +630,39 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                   </div>
                 )}
 
+                {/* Room Size Filter */}
+                <div
+                  data-testid="room-size-filter-bar"
+                  className="flex flex-wrap items-center gap-1 pt-0.5 border-t border-slate-200/60"
+                >
+                  <span className="text-[8px] font-extrabold uppercase tracking-wider text-slate-500">
+                    Size:
+                  </span>
+                  {(['all', 'compact', 'medium', 'large'] as const).map((size) => {
+                    const active = roomSizeFilter === size;
+                    return (
+                      <button
+                        key={size}
+                        type="button"
+                        onClick={() => setRoomSizeFilter(size)}
+                        className={`px-1.5 py-0.1 rounded-full text-[8px] font-mono font-bold capitalize transition-all border ${
+                          active
+                            ? 'bg-[#0284c7] text-white border-[#38bdf8]'
+                            : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-300'
+                        }`}
+                      >
+                        {size === 'compact'
+                          ? 'Compact (<5m)'
+                          : size === 'medium'
+                          ? 'Medium (5-9m)'
+                          : size === 'large'
+                          ? 'Large (>9m)'
+                          : 'All Sizes'}
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <div className="flex items-center justify-between text-[10px] pt-0.5 border-t border-slate-200">
                   <label className="flex items-center gap-1 text-[10px] text-slate-600 cursor-pointer truncate">
                     <input
@@ -674,10 +711,74 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                             {bp.description}
                           </div>
                         </div>
-                        <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-bold shrink-0">
-                          {bp.items.length} objs · {bp.boundingSize[0]}×{bp.boundingSize[1]}m
-                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-bold">
+                            {bp.items.length} objs · {bp.boundingSize[0]}×{bp.boundingSize[1]}m
+                          </span>
+                          {onUpdateRoomBlueprint && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setRoomBpTagEditorOpenId(
+                                  roomBpTagEditorOpenId === bp.id ? null : bp.id
+                                )
+                              }
+                              className="px-1.5 py-0.2 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-700 text-[9px] font-bold"
+                              title="Manage Custom Tags"
+                            >
+                              {roomBpTagEditorOpenId === bp.id ? 'Close' : '🏷️ Tags'}
+                            </button>
+                          )}
+                        </div>
                       </div>
+
+                      {roomBpTagEditorOpenId === bp.id && onUpdateRoomBlueprint && (
+                        <div
+                          data-testid={`room-bp-tag-manager-${bp.id}`}
+                          className="bg-slate-50 border border-slate-200 rounded-xl p-1.5 space-y-1 mt-1"
+                        >
+                          <div className="text-[9px] font-extrabold text-slate-700">
+                            Quick Category Tags (Click to toggle):
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {[
+                              'lobby',
+                              'bedroom',
+                              'suite',
+                              'parlor',
+                              'corridor',
+                              'basement',
+                              'office',
+                              'reception',
+                              'kitchenette',
+                              'bathroom',
+                              'archive'
+                            ].map((preset) => {
+                              const hasTag = (bp.tags || []).includes(preset);
+                              return (
+                                <button
+                                  key={preset}
+                                  type="button"
+                                  onClick={() => {
+                                    if (hasTag) {
+                                      onUpdateRoomBlueprint(removeTagFromBlueprint(bp, preset));
+                                    } else {
+                                      onUpdateRoomBlueprint(addTagToBlueprint(bp, preset));
+                                    }
+                                  }}
+                                  className={`px-1.5 py-0.5 rounded-full text-[8px] font-mono font-bold transition-all border ${
+                                    hasTag
+                                      ? 'bg-emerald-600 text-white border-emerald-500'
+                                      : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-300'
+                                  }`}
+                                >
+                                  {hasTag ? `✓ #${preset}` : `+ #${preset}`}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Room Blueprint Tag Chips & Inline Add Tag */}
                       <div className="flex flex-wrap items-center gap-1">

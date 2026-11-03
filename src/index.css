@@ -208,3 +208,32 @@
   will-change: opacity, filter;
 }
 
+@keyframes flicker-animation {
+  0%, 100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+  25% {
+    opacity: 0.75;
+    filter: brightness(0.7);
+  }
+  50% {
+    opacity: 1.15;
+    filter: brightness(1.3);
+  }
+  75% {
+    opacity: 0.85;
+    filter: brightness(0.9);
+  }
+}
+
+.flicker-animation {
+  animation-name: flicker-animation;
+  animation-duration: var(--flicker-duration, 1.2s);
+  animation-timing-function: steps(var(--flicker-steps, 12), end);
+  animation-iteration-count: infinite;
+  animation-delay: var(--flicker-delay, 0s);
+  will-change: opacity, filter;
+}
+
+

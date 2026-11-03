@@ -38,6 +38,7 @@ import {
   computeCharacterAnimationLodState,
   evaluateHybridLowFrameRigState,
   sampleUnkemptFlickerIntensity,
+  sampleLightEmittingPulseIntensity,
   STUDIO_DARK_UI_WHITE_CANVAS_SPEC,
   computeBuildPlacementPosition,
   DEFAULT_SNAP_GRID_SIZE,
@@ -102,6 +103,7 @@ interface HotelViewport3DProps {
   onMoveSelectedAgentTo?: (agentId: string, x: number, z: number) => void;
   onSelectedAgentScreenPosition?: (pos: { x: number; y: number } | null) => void;
   onPlayerPositionStep?: (pos: [number, number, number], floor: FloorId) => void;
+  lightingEnabled?: boolean;
 }
 
 // Pre-allocated scratch math helpers outside the animation loop (Zero GC)
@@ -1863,9 +1865,11 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
         for (let i = 0; i < grp.children.length; i++) {
           const child = grp.children[i];
           if (child.userData?.isUnkemptOrAged && child.userData?.assetId) {
+            const asset = child.userData.asset as PlacedAsset | undefined;
+            const effectiveFps = asset?.customAnimationFps || st.globalAnimationFps || DEFAULT_GLOBAL_ANIMATION_FPS;
             const sample = sampleUnkemptFlickerIntensity(
               elapsed,
-              st.globalAnimationFps || DEFAULT_GLOBAL_ANIMATION_FPS,
+              effectiveFps,
               child.userData.assetId
             );
             child.traverse((node) => {
@@ -1884,6 +1888,44 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
       };
       updateUnkemptFlickerOnGroup(dynamicAssetsGroup);
       updateUnkemptFlickerOnGroup(isolatedAssetGroup);
+
+      // Pulse / Flicker Animation for Light-Emitting Assets (Lamps, TVs, Glowing Screens) synchronized to globalAnimationFps
+      const updateLightEmittingPulseOnGroup = (grp: THREE.Group) => {
+        for (let i = 0; i < grp.children.length; i++) {
+          const child = grp.children[i];
+          if (child.userData?.assetId) {
+            const asset = child.userData.asset as PlacedAsset | undefined;
+            if (asset && asset.isActivated) {
+              const effectiveFps = asset.customAnimationFps || st.globalAnimationFps || DEFAULT_GLOBAL_ANIMATION_FPS;
+              const pulseSample = sampleLightEmittingPulseIntensity(
+                elapsed,
+                effectiveFps,
+                child.userData.assetId
+              );
+              child.traverse((node) => {
+                const obj = node as THREE.Object3D;
+                if ((obj as THREE.PointLight).isPointLight && obj.name === 'interactiveStateLight') {
+                  const pt = obj as THREE.PointLight;
+                  const baseInt = pt.userData?.baseIntensity ?? (pt.intensity || 1.0);
+                  if (pt.userData?.baseIntensity === undefined) pt.userData.baseIntensity = baseInt;
+                  pt.intensity = baseInt * pulseSample.lightIntensityMultiplier;
+                }
+                const mesh = obj as THREE.Mesh;
+                if (mesh.isMesh && mesh.material) {
+                  const mat = mesh.material as THREE.MeshStandardMaterial;
+                  if (mesh.userData?.isTvScreen) {
+                    mat.emissiveIntensity = 1.45 * pulseSample.emissiveIntensityMultiplier;
+                  } else if (mat.emissive && mat.emissiveIntensity > 0) {
+                    mat.emissiveIntensity = Math.min(2.0, mat.emissiveIntensity * pulseSample.emissiveIntensityMultiplier);
+                  }
+                }
+              });
+            }
+          }
+        }
+      };
+      updateLightEmittingPulseOnGroup(dynamicAssetsGroup);
+      updateLightEmittingPulseOnGroup(isolatedAssetGroup);
 
       // Periodically project the primary selected asset's 3D position to 2D screen coordinates
       // so the [F] Quick Edit floating window sits immediately to the right of the asset

@@ -96,6 +96,11 @@ export interface PlacedAsset {
   triggerOnce?: boolean;
   hasTriggered?: boolean;
   triggeredCount?: number;
+  isLightEmitting?: boolean;
+  emissionIntensity?: number;
+  lightIntensity?: number;
+  lightingPreset?: string;
+  customAnimationFps?: number;
 }
 
 export type InvisibleTriggerEventType =
@@ -2047,6 +2052,10 @@ export function batchModifySelectedAssets(
     rotationDeltaY?: number;
     hingeSwingMode?: HingeSwingMode;
     isSecretPassage?: boolean;
+    emissionIntensity?: number;
+    lightIntensity?: number;
+    isLightEmitting?: boolean;
+    lightingPreset?: string;
   }
 ): PlacedAsset[] {
   const idSet = new Set(selectedIds);
@@ -2074,10 +2083,31 @@ export function batchModifySelectedAssets(
       position: [a.position[0], nextDims[1] / 2, a.position[2]],
       rotationY: patch.rotationDeltaY !== undefined ? a.rotationY + patch.rotationDeltaY : a.rotationY,
       hingeSwingMode: patch.hingeSwingMode ?? a.hingeSwingMode,
-      isSecretPassage: patch.isSecretPassage !== undefined ? patch.isSecretPassage : a.isSecretPassage
+      isSecretPassage: patch.isSecretPassage !== undefined ? patch.isSecretPassage : a.isSecretPassage,
+      emissionIntensity: patch.emissionIntensity !== undefined ? patch.emissionIntensity : a.emissionIntensity,
+      lightIntensity: patch.lightIntensity !== undefined ? patch.lightIntensity : a.lightIntensity,
+      isLightEmitting: patch.isLightEmitting !== undefined ? patch.isLightEmitting : a.isLightEmitting,
+      lightingPreset: patch.lightingPreset !== undefined ? patch.lightingPreset : a.lightingPreset,
+      customAnimationFps: patch.customAnimationFps !== undefined ? patch.customAnimationFps : a.customAnimationFps
     };
   });
 }
+
+export interface LightingPresetDefinition {
+  id: string;
+  label: string;
+  intensity: number;
+  color: string;
+}
+
+export const LIGHTING_PRESETS: LightingPresetDefinition[] = [
+  { id: 'atmospheric_dim', label: 'Atmospheric Dim', intensity: 0.6, color: '#d4944e' },
+  { id: 'bright_office', label: 'Bright Office', intensity: 2.0, color: '#f8fafc' },
+  { id: 'eerie_flashlight', label: 'Eerie Flashlight', intensity: 1.8, color: '#67e8f9' },
+  { id: 'amber_terminal', label: 'Amber Terminal', intensity: 1.2, color: '#c27d38' },
+  { id: 'neon_grime', label: 'Neon Green Grime', intensity: 1.5, color: '#4d8a68' },
+  { id: 'candlelight', label: 'Candlelight Flicker', intensity: 0.8, color: '#f97316' }
+];
 
 export const DEFAULT_GLOBAL_INSTRUCTION_SET =
   'STRICT OFFLINE GAME-WORLD SANDBOX (NO INTERNET ACCESS): All characters operate strictly within The Alderney Arms Mystery Hotel universe—an unmaintained, faded red-brick residential apartment-hotel frozen in the late 1970s and early 1980s (peeling damask wallpaper, water-stained plaster, surface-mounted electrical conduits, woodgrain 1978 CRT TVs with rotary dials, a battered 1979 coin-op soda cooler, and faded avocado/harvest-gold suite kitchenettes alongside original dark walnut wainscoting and clanking steam radiators), where the tenants are permanent residents, some of whom have lived in their shadowy suites for decades. Characters have ZERO internet access or external web knowledge. Never reference real-world cities, money, finance, stocks, modern smartphones, modern internet, AI models, or out-of-universe facts. Characters may ONLY know and discuss: (1) their Starting Known Information (knownFacts), (2) their Personal Instruction Set & Personality (voice, demeanor, likes, dislikes), (3) their Saved Interaction & Dialogue History, and (4) the active Gameplay Time-of-Day Event & Daily Action Schedule.';
@@ -5707,12 +5737,23 @@ export function extractMoodLightEmittersFromAssets(
   const floorAssets = assets.filter((a) => a.floor === floor);
   for (const asset of floorAssets) {
     const lowerName = `${asset.name} ${asset.subType}`.toLowerCase();
-    if (
+    const isLightAsset =
       asset.category === 'lighting' ||
+      Boolean(asset.isLightEmitting) ||
       lowerName.includes('lamp') ||
       lowerName.includes('sconce') ||
-      lowerName.includes('chandelier')
-    ) {
+      lowerName.includes('chandelier') ||
+      lowerName.includes('exit_sign') ||
+      lowerName.includes('flashlight');
+    const isScreenAsset =
+      lowerName.includes('crt') ||
+      lowerName.includes('tv') ||
+      lowerName.includes('terminal') ||
+      lowerName.includes('computer');
+    const customColor = asset.color && asset.color !== '#592820' && asset.color !== '#18221c' ? asset.color : null;
+    const intensityMultiplier = Number(asset.emissionIntensity ?? asset.lightIntensity ?? 1.0);
+
+    if (isLightAsset) {
       emitters.push({
         id: `mood_tungsten_${asset.id}`,
         label: `${asset.name} (Warm Tungsten Pool)`,
@@ -5722,16 +5763,11 @@ export function extractMoodLightEmittersFromAssets(
           asset.position[1] + Math.max(0.4, asset.dimensions[1] * 0.42),
           asset.position[2]
         ],
-        baseColorHex: '#d4944e',
-        baseIntensity: 1.12,
+        baseColorHex: customColor || '#d4944e',
+        baseIntensity: Number((1.12 * intensityMultiplier).toFixed(2)),
         distance: 7.5
       });
-    } else if (
-      lowerName.includes('crt') ||
-      lowerName.includes('tv') ||
-      lowerName.includes('terminal') ||
-      lowerName.includes('computer')
-    ) {
+    } else if (isScreenAsset) {
       emitters.push({
         id: `mood_crt_${asset.id}`,
         label: `${asset.name} (Phosphor Glow)`,
@@ -5741,8 +5777,8 @@ export function extractMoodLightEmittersFromAssets(
           asset.position[1] + Math.max(0.25, asset.dimensions[1] * 0.25),
           asset.position[2] + 0.35
         ],
-        baseColorHex: lowerName.includes('terminal') ? '#c27d38' : '#4d8a68',
-        baseIntensity: 0.68,
+        baseColorHex: customColor || (lowerName.includes('terminal') ? '#c27d38' : '#4d8a68'),
+        baseIntensity: Number((0.68 * intensityMultiplier).toFixed(2)),
         distance: 4.8
       });
     }
@@ -9458,13 +9494,16 @@ export function searchAndFilterCatalogBlueprints<T extends SearchableBlueprintLi
 
 export type CatalogSortMode = CatalogSortOrder;
 
+export type RoomSizeFilterCategory = 'all' | 'compact' | 'medium' | 'large';
+
 /**
- * Multi-token search and tag filter for Room Layout Blueprints (`RoomBlueprint[]`).
+ * Multi-token search, tag filter, and room size filter for Room Layout Blueprints (`RoomBlueprint[]`).
  */
 export function searchAndFilterRoomBlueprints(
   roomBlueprints: readonly RoomBlueprint[],
   query = '',
-  activeTag: string | readonly string[] = 'all'
+  activeTag: string | readonly string[] = 'all',
+  roomSizeFilter: RoomSizeFilterCategory = 'all'
 ): RoomBlueprint[] {
   const requiredTags = Array.isArray(activeTag)
     ? parseBlueprintTagsInput(activeTag)
@@ -9482,6 +9521,14 @@ export function searchAndFilterRoomBlueprints(
     if (requiredTags.length > 0 && !requiredTags.every((t) => bpTags.includes(t))) {
       return false;
     }
+
+    if (roomSizeFilter && roomSizeFilter !== 'all') {
+      const maxSpan = Math.max(bp.boundingSize?.[0] || 0, bp.boundingSize?.[1] || 0);
+      if (roomSizeFilter === 'compact' && maxSpan >= 5.0) return false;
+      if (roomSizeFilter === 'medium' && (maxSpan < 5.0 || maxSpan >= 9.0)) return false;
+      if (roomSizeFilter === 'large' && maxSpan < 9.0) return false;
+    }
+
     if (tokens.length === 0) return true;
 
     const searchableText = [
@@ -11403,6 +11450,46 @@ export function sampleUnkemptFlickerIntensity(
 }
 
 /**
+ * Computes a synchronized pulse or flicker animation for light-emitting assets (lamps, TVs, glowing screens)
+ * keyed directly to the globalAnimationFps variable for consistent frame-stepped rendering.
+ */
+export function sampleLightEmittingPulseIntensity(
+  timeSec: number,
+  globalFps: number,
+  assetSeed = 'default'
+): {
+  steppedTimeSec: number;
+  stepIndex: number;
+  pulseMultiplier: number;
+  lightIntensityMultiplier: number;
+  emissiveIntensityMultiplier: number;
+} {
+  const safeFps = Math.max(1, Math.min(60, Math.round(globalFps || DEFAULT_GLOBAL_ANIMATION_FPS)));
+  const stepIndex = Math.floor(Math.max(0, timeSec) * safeFps);
+  const steppedTimeSec = stepIndex / safeFps;
+
+  let seedHash = 2166136261;
+  for (let i = 0; i < assetSeed.length; i++) {
+    seedHash ^= assetSeed.charCodeAt(i);
+    seedHash = Math.imul(seedHash, 16777619) >>> 0;
+  }
+
+  // Smooth pulse wave combined with subtle frame-stepped flicker
+  const phase = (steppedTimeSec * 3.14159 * 2.0) + ((seedHash % 99) * 0.1);
+  const sinePulse = 0.9 + Math.sin(phase * 1.8) * 0.1;
+  const flickerNoise = Math.sin(stepIndex * 2.1 + (seedHash % 31)) * 0.035;
+  const combined = Math.max(0.75, Math.min(1.25, sinePulse + flickerNoise));
+
+  return {
+    steppedTimeSec,
+    stepIndex,
+    pulseMultiplier: combined,
+    lightIntensityMultiplier: combined,
+    emissiveIntensityMultiplier: combined
+  };
+}
+
+/**
  * Returns true if the given asset is a Television / CRT TV / VCR combo unit.
  */
 export function isTvOrCrtScreenAsset(
@@ -11451,6 +11538,7 @@ export interface AssetInteractionVisualState {
   screenEmissiveIntensity: number;
   emissiveIntensity: number;
   emitsLight: boolean;
+  isLightEmitting: boolean;
   lightColorHex: string;
   lightIntensity: number;
   lightDistance: number;

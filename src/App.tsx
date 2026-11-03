@@ -172,6 +172,7 @@ export default function App() {
   // Audio Engine State (No automatic sounds or footsteps in ArchitectForge Studio)
   const [walkthroughBgmEnabled, setWalkthroughBgmEnabled] = useState<boolean>(false);
   const [footstepsEnabled, setFootstepsEnabled] = useState<boolean>(false);
+  const [lightingEnabled, setLightingEnabled] = useState<boolean>(true);
 
   // Proposal 2: 1970s Chrome D-Cell / UV Flashlight Inspection Cone in Walk Mode ([L])
   const [flashlightEnabled, setFlashlightEnabled] = useState<boolean>(true);
@@ -3649,6 +3650,7 @@ export default function App() {
         globalAnimationFps={globalAnimationFps}
         snapGridSize={snapGridSize}
         snapToAssetPlacement={surfaceSnapEnabled}
+        lightingEnabled={lightingEnabled}
       />
 
       {/* 2. FLOATING [F] QUICK EDIT WINDOW TO THE RIGHT OF THE SELECTED ASSET OR SELECTED CHARACTER */}
@@ -3775,6 +3777,24 @@ export default function App() {
                   <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
                   <circle cx="12" cy="12" r="3" />
                 </svg>
+              </button>
+              <button
+                type="button"
+                data-testid="toggle-lighting-btn"
+                title={lightingEnabled ? 'Lighting ENABLED — Click to turn off scene lighting' : 'Lighting DISABLED — Click to turn on scene lighting'}
+                onClick={() => {
+                  setLightingEnabled((v) => {
+                    const next = !v;
+                    setStatusBanner(next ? '💡 Scene lighting turned ON.' : '💡 Scene lighting turned OFF.');
+                    return next;
+                  });
+                }}
+                className={`px-2.5 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1 shrink-0 ${
+                  lightingEnabled ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50' : 'bg-slate-800 text-slate-400 border border-slate-700'
+                }`}
+              >
+                <span>💡</span>
+                <span>{lightingEnabled ? 'Light: ON' : 'Light: OFF'}</span>
               </button>
             </div>
 
