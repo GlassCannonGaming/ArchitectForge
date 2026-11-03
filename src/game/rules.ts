@@ -88,7 +88,23 @@ export interface PlacedAsset {
   structuralConstraint?: string;
   predecessor1978Id?: string;
   paired1990sId?: string;
+  isInvisibleTrigger?: boolean;
+  triggerEventType?: InvisibleTriggerEventType;
+  triggerTargetId?: string;
+  triggerPayload?: string;
+  triggerRadius?: number;
+  triggerOnce?: boolean;
+  hasTriggered?: boolean;
+  triggeredCount?: number;
 }
+
+export type InvisibleTriggerEventType =
+  | 'sound_ambience'
+  | 'open_secret_passage'
+  | 'sanity_shock'
+  | 'lights_flicker'
+  | 'npc_anomaly'
+  | 'clue_reveal';
 
 export type CharacterArchetype =
   | 'Detective Clerk'
@@ -139,7 +155,14 @@ export type ScheduledActivityGesture =
   | 'wall_listen'
   | 'pace_corridor'
   | 'parlor_social'
-  | 'sleepwalk_trance';
+  | 'sleepwalk_trance'
+  | 'sit_chair'
+  | 'open_door'
+  | 'press_button'
+  | 'pickup_item'
+  | 'lay_bed'
+  | 'crawl'
+  | 'run';
 
 export interface SkeletonPoseEuler {
   pelvisY: number;
@@ -501,6 +524,7 @@ export interface HotelAgentProfile {
   voiceStyle?: string;
   voiceProfile?: CharacterVoiceProfile;
   activeFacialExpression?: FacialExpressionType;
+  activeInteractGesture?: ScheduledActivityGesture;
   demeanor?: string;
   likes?: string[];
   dislikes?: string[];
@@ -2615,7 +2639,135 @@ export function computeSkeletonPose(
 
   const effectiveWalking = isWalking || activityGesture === 'pace_corridor';
 
-  if (effectiveWalking) {
+  if (activityGesture === 'run') {
+    const runFreq = 7.8;
+    const phase = timeSec * runFreq;
+    const strideSwing = 0.78;
+
+    pelvisY += Math.abs(Math.sin(phase)) * 0.055 - 0.04;
+    lumbarX -= 0.16;
+    thoracicX -= 0.14;
+    neckX += 0.22;
+    lumbarY = Math.sin(phase) * 0.14;
+    thoracicY = -lumbarY * 0.8;
+
+    leftThighX = Math.sin(phase) * strideSwing + 0.12;
+    leftCalfX = -Math.max(0.15, -Math.sin(phase) * 0.95);
+    leftFootX = Math.cos(phase) * 0.28;
+
+    rightThighX = -Math.sin(phase) * strideSwing + 0.12;
+    rightCalfX = -Math.max(0.15, Math.sin(phase) * 0.95);
+    rightFootX = -Math.cos(phase) * 0.28;
+
+    leftUpperArmX = -Math.sin(phase) * 0.68;
+    leftForearmX = -1.15;
+    rightUpperArmX = Math.sin(phase) * 0.68;
+    rightForearmX = -1.15;
+  } else if (activityGesture === 'crawl') {
+    const crawlFreq = 4.2;
+    const phase = timeSec * crawlFreq;
+    pelvisY = 0.36 + Math.sin(phase * 2) * 0.018;
+    lumbarX = -1.15;
+    lowerThoracicX = -0.25;
+    thoracicX = -0.15;
+    neckX = 1.15;
+    headX = 0.18;
+
+    leftUpperArmX = 1.25 + Math.sin(phase) * 0.38;
+    leftForearmX = -0.45;
+    rightUpperArmX = 1.25 - Math.sin(phase) * 0.38;
+    rightForearmX = -0.45;
+
+    leftThighX = 1.15 - Math.sin(phase) * 0.35;
+    leftCalfX = -1.35;
+    rightThighX = 1.15 + Math.sin(phase) * 0.35;
+    rightCalfX = -1.35;
+  } else if (activityGesture === 'sit_chair') {
+    const breathPhase = timeSec * 1.2;
+    pelvisY = 0.54;
+    lumbarX = -0.05;
+    thoracicX = -0.04 + Math.sin(breathPhase) * 0.015;
+    headY = Math.sin(timeSec * 0.6) * 0.06;
+
+    // 90-degree seated hip and knee bend
+    leftThighX = 1.48;
+    leftCalfX = -1.48;
+    leftFootX = 0.04;
+    rightThighX = 1.48;
+    rightCalfX = -1.48;
+    rightFootX = 0.04;
+
+    // Hands resting on armrests / lap
+    leftUpperArmX = 0.24;
+    leftUpperArmZ = 0.14;
+    leftForearmX = -0.92;
+    rightUpperArmX = 0.24;
+    rightUpperArmZ = -0.14;
+    rightForearmX = -0.92;
+  } else if (activityGesture === 'lay_bed') {
+    const breathPhase = timeSec * 0.95;
+    pelvisY = 0.56;
+    lumbarX = 1.42;
+    lowerThoracicX = 0.08;
+    thoracicX = 0.05 + Math.sin(breathPhase) * 0.018;
+    neckX = -0.18;
+    headY = Math.sin(breathPhase * 0.5) * 0.04;
+
+    leftThighX = -1.38;
+    leftCalfX = -0.08;
+    rightThighX = -1.38;
+    rightCalfX = -0.08;
+
+    leftUpperArmX = -0.12;
+    leftUpperArmZ = 0.18;
+    leftForearmX = -0.35;
+    rightUpperArmX = -0.12;
+    rightUpperArmZ = -0.18;
+    rightForearmX = -0.35;
+  } else if (activityGesture === 'press_button') {
+    // Shared reach out and touch animation for every button-activated asset
+    const reachPulse = Math.sin(timeSec * 3.2) * 0.5 + 0.5;
+    lumbarX -= 0.08 * reachPulse;
+    thoracicX -= 0.1 * reachPulse;
+    thoracicY = -0.12 * reachPulse;
+    headX -= 0.06;
+
+    rightClavicleZ = -0.08 * reachPulse;
+    rightUpperArmX = 1.12 + 0.22 * reachPulse;
+    rightUpperArmZ = -0.04;
+    rightForearmX = -0.32 + 0.18 * reachPulse;
+    rightHandZ = -0.12;
+
+    leftUpperArmX = 0.12;
+    leftForearmX = -0.38;
+  } else if (activityGesture === 'open_door') {
+    // Reach out, twist brass handle, and pull/push door swing
+    const swingPhase = Math.sin(timeSec * 2.4);
+    lumbarY = -0.18 * swingPhase;
+    thoracicX -= 0.12;
+    rightUpperArmX = 1.05 + swingPhase * 0.28;
+    rightForearmX = -0.58 + swingPhase * 0.2;
+    rightHandZ = swingPhase * 0.35; // handle turn twist
+    leftUpperArmX = 0.18;
+    leftForearmX = -0.42;
+  } else if (activityGesture === 'pickup_item') {
+    // Squat/bend down and reach with both hands to place/pickup an item
+    const dip = Math.sin(timeSec * 2.2) * 0.5 + 0.5;
+    pelvisY -= 0.24 * dip;
+    lumbarX -= 0.38 * dip;
+    thoracicX -= 0.28 * dip;
+    neckX += 0.42 * dip;
+
+    leftThighX += 0.62 * dip;
+    leftCalfX -= 1.08 * dip;
+    rightThighX += 0.62 * dip;
+    rightCalfX -= 1.08 * dip;
+
+    leftUpperArmX = 0.95 * dip;
+    leftForearmX = -0.42 * dip;
+    rightUpperArmX = 1.05 * dip;
+    rightForearmX = -0.45 * dip;
+  } else if (effectiveWalking) {
     const strideFreq = safeCurvature > 20 ? 3.6 : 4.8;
     const phase = timeSec * strideFreq;
     const strideSwing = safeCurvature > 20 ? 0.32 : 0.44;
@@ -5750,6 +5902,41 @@ export function parseAssetDescriptionsFile(
       for (const line of lines) {
         const stripped = line.replace(/^(?:\d+[.)]|[-*•])\s*/, '').trim();
         if (!stripped) continue;
+
+        if (stripped.includes('|')) {
+          const cols = stripped.split('|').map((c) => c.trim()).filter(Boolean);
+          const name = cols[0] || `Hotel Asset #${results.length + 1}`;
+          const rawCat = (cols[1] || '').toLowerCase();
+          const validCat = [
+            'wall',
+            'secret_wall',
+            'floor_tile',
+            'door',
+            'window_wall',
+            'furniture',
+            'appliance',
+            'lighting',
+            'clue_prop',
+            'custom_ai'
+          ].includes(rawCat)
+            ? (rawCat as AssetCategory)
+            : undefined;
+          const dims = cols[2] && /\d/.test(cols[2]) ? parseDimensionsString(cols[2]) : ([1.0, 1.25, 0.75] as [number, number, number]);
+          const description = cols[cols.length - 1] || name;
+          const enforcedImagePrompt = buildEnforcedLowPolyImagePrompt(name, description);
+          const resolvedCat = validCat || inferCategoryFromDescription(name, description);
+          results.push({
+            id: `desc_${results.length + 1}`,
+            name,
+            description,
+            descriptionPrompt: enforcedImagePrompt,
+            enforcedImagePrompt,
+            categoryHint: resolvedCat,
+            dimensionsHint: dims
+          });
+          continue;
+        }
+
         const colonIdx = stripped.indexOf(':');
         const hasTitlePrefix = colonIdx > 2 && colonIdx <= 64;
         const name = hasTitlePrefix
@@ -5757,13 +5944,14 @@ export function parseAssetDescriptionsFile(
           : stripped.split(/[.,;]/)[0].slice(0, 44).trim() || `Hotel Asset #${results.length + 1}`;
         const description = hasTitlePrefix ? stripped.slice(colonIdx + 1).trim() : stripped;
         const enforcedImagePrompt = buildEnforcedLowPolyImagePrompt(name, description);
+        const resolvedCat = inferCategoryFromDescription(name, description);
         results.push({
           id: `desc_${results.length + 1}`,
           name,
           description,
           descriptionPrompt: enforcedImagePrompt,
           enforcedImagePrompt,
-          categoryHint: inferCategoryFromDescription(name, description),
+          categoryHint: resolvedCat,
           dimensionsHint: [1.0, 1.25, 0.75]
         });
       }
@@ -7891,6 +8079,62 @@ export const MESHY_ANIMATION_PRESETS: Record<ScheduledActivityGesture, MeshyAnim
     categoryLabel: 'Occult · Sleepwalk Trance',
     cycleDurationSec: 3.0,
     description: 'Somnambulist swaying drift with outstretched forearms and hollow head pitch (Meshy Action #118).'
+  },
+  sit_chair: {
+    gesture: 'sit_chair',
+    actionId: 132,
+    actionName: 'Sit_In_Chair_Shared',
+    categoryLabel: 'Interact · Sit in Chair',
+    cycleDurationSec: 2.0,
+    description: 'Shared basic seated posture with 90-degree hip/knee bend and hands resting on armrests (Meshy Action #132).'
+  },
+  open_door: {
+    gesture: 'open_door',
+    actionId: 145,
+    actionName: 'Open_Door_Handle_Shared',
+    categoryLabel: 'Interact · Open Door',
+    cycleDurationSec: 1.5,
+    description: 'Shared basic door handle reach, brass latch turn, and pull/push swing motion (Meshy Action #145).'
+  },
+  press_button: {
+    gesture: 'press_button',
+    actionId: 152,
+    actionName: 'Reach_Touch_Button_Shared',
+    categoryLabel: 'Interact · Press Button / Switch',
+    cycleDurationSec: 1.2,
+    description: 'Shared basic reach-out-and-touch right-hand button press animation for all button-activated assets (Meshy Action #152).'
+  },
+  pickup_item: {
+    gesture: 'pickup_item',
+    actionId: 164,
+    actionName: 'Place_Pickup_Item_Shared',
+    categoryLabel: 'Interact · Place / Pickup Item',
+    cycleDurationSec: 1.6,
+    description: 'Shared basic knee-bend and two-handed reach to place or pick up items (Meshy Action #164).'
+  },
+  lay_bed: {
+    gesture: 'lay_bed',
+    actionId: 178,
+    actionName: 'Lay_In_Bed_Shared',
+    categoryLabel: 'Interact · Lay in Bed',
+    cycleDurationSec: 3.0,
+    description: 'Shared basic horizontal reclining posture for beds and cots (Meshy Action #178).'
+  },
+  crawl: {
+    gesture: 'crawl',
+    actionId: 186,
+    actionName: 'Low_Crawl_Shared',
+    categoryLabel: 'Locomotion · Crawl',
+    cycleDurationSec: 1.8,
+    description: 'Shared basic hands-and-knees low crawl cycle for crawlspaces and shafts (Meshy Action #186).'
+  },
+  run: {
+    gesture: 'run',
+    actionId: 194,
+    actionName: 'Brisk_Run_Shared',
+    categoryLabel: 'Locomotion · Run',
+    cycleDurationSec: 1.0,
+    description: 'Shared basic rapid bipedal run cycle with high knee drive and pumped forearms (Meshy Action #194).'
   }
 };
 
@@ -9049,6 +9293,76 @@ export const GOOGLE_AI_ANIMATION_PRESETS: Record<ScheduledActivityGesture, Googl
     motionPromptDirective:
       'Hypnotic swaying torso drift, partially raised forearms, entranced head pitch toward basement shaft.',
     description: 'Google AI Studio (gemini-3.1-flash-lite) low-frame somnambulist trance cycle with dilated hollow stare.'
+  },
+  sit_chair: {
+    gesture: 'sit_chair',
+    presetId: 'gai_anim_sit_chair',
+    actionName: 'GoogleAI_Sit_In_Chair',
+    categoryLabel: 'Interact · Sit in Chair',
+    cycleDurationSec: 2.0,
+    defaultFacialExpression: 'neutral',
+    motionPromptDirective: 'Basic shared seated posture with 90-degree hip and knee bend and calm breathing.',
+    description: 'Shared basic rig movement for sitting in chairs, armchairs, and parlor sofas.'
+  },
+  open_door: {
+    gesture: 'open_door',
+    presetId: 'gai_anim_open_door',
+    actionName: 'GoogleAI_Open_Door',
+    categoryLabel: 'Interact · Open Door',
+    cycleDurationSec: 1.5,
+    defaultFacialExpression: 'suspicious',
+    motionPromptDirective: 'Basic shared right-hand reach, handle twist, and door swing pull/push.',
+    description: 'Shared basic rig movement for opening suite doors and secret bookshelf passages.'
+  },
+  press_button: {
+    gesture: 'press_button',
+    presetId: 'gai_anim_press_button',
+    actionName: 'GoogleAI_Press_Button_Touch',
+    categoryLabel: 'Interact · Press Button / Touch',
+    cycleDurationSec: 1.2,
+    defaultFacialExpression: 'neutral',
+    motionPromptDirective: 'Same shared reach-out-and-touch right-arm extension for all button-activated assets.',
+    description: 'Shared basic reach-out-and-touch animation used across all button-activated assets (TVs, switches, intercoms, radios, elevators).'
+  },
+  pickup_item: {
+    gesture: 'pickup_item',
+    presetId: 'gai_anim_pickup_item',
+    actionName: 'GoogleAI_Place_Pickup_Item',
+    categoryLabel: 'Interact · Place / Pickup Item',
+    cycleDurationSec: 1.6,
+    defaultFacialExpression: 'suspicious',
+    motionPromptDirective: 'Basic shared knee crouch and forward reach to pick up or place an item.',
+    description: 'Shared basic rig movement for placing or picking up clues, keys, and props.'
+  },
+  lay_bed: {
+    gesture: 'lay_bed',
+    presetId: 'gai_anim_lay_bed',
+    actionName: 'GoogleAI_Lay_In_Bed',
+    categoryLabel: 'Interact · Lay in Bed',
+    cycleDurationSec: 3.0,
+    defaultFacialExpression: 'weary',
+    motionPromptDirective: 'Basic shared horizontal reclining posture on a suite bed with slow breathing.',
+    description: 'Shared basic rig movement for laying in a bed.'
+  },
+  crawl: {
+    gesture: 'crawl',
+    presetId: 'gai_anim_crawl',
+    actionName: 'GoogleAI_Crawl',
+    categoryLabel: 'Locomotion · Crawl',
+    cycleDurationSec: 1.8,
+    defaultFacialExpression: 'alarmed',
+    motionPromptDirective: 'Basic shared low hands-and-knees crawl locomotion.',
+    description: 'Shared basic rig movement for crawling through low passages.'
+  },
+  run: {
+    gesture: 'run',
+    presetId: 'gai_anim_run',
+    actionName: 'GoogleAI_Run',
+    categoryLabel: 'Locomotion · Run',
+    cycleDurationSec: 1.0,
+    defaultFacialExpression: 'alarmed',
+    motionPromptDirective: 'Basic shared brisk running stride with reciprocal arm and knee drive.',
+    description: 'Shared basic rig movement for running down corridors.'
   }
 };
 
@@ -10254,6 +10568,370 @@ export function swapAssetConditionVariant(
       safeVariant === 'unkempt'
         ? `Swapped "${asset.name}" to Unkempt (1978 Grime + Flicker) & procedurally re-textured.`
         : `Swapped "${asset.name}" to Pristine (1978 Intact) & procedurally re-textured.`
+  };
+}
+
+/**
+ * Refactored single-pass batch condition variant updater.
+ * Pre-merges catalog blueprints once and updates all target assets in a single atomic batch,
+ * preventing multiple state re-renders and UI thrashing when switching conditions across
+ * multiple selected assets or rapid condition toggling.
+ */
+export function batchSwapAssetsConditionVariant(
+  assets: readonly PlacedAsset[],
+  targetIds: readonly string[],
+  targetVariant: AssetConditionVariant,
+  allBlueprints: readonly SearchableBlueprintLike[] = []
+): {
+  updatedAssets: PlacedAsset[];
+  swappedAssets: PlacedAsset[];
+  swappedIds: string[];
+  swappedCount: number;
+  conditionVariant: AssetConditionVariant;
+  message: string;
+} {
+  const safeVariant: AssetConditionVariant =
+    targetVariant === 'unkempt' || targetVariant === 'updated' || targetVariant === 'pristine'
+      ? targetVariant
+      : 'pristine';
+
+  const safeAssets = Array.isArray(assets) ? assets : [];
+  const idSet = new Set((Array.isArray(targetIds) ? targetIds : []).filter(Boolean));
+
+  if (idSet.size === 0 || safeAssets.length === 0) {
+    return {
+      updatedAssets: [...safeAssets],
+      swappedAssets: [],
+      swappedIds: [],
+      swappedCount: 0,
+      conditionVariant: safeVariant,
+      message: 'No assets selected for batch condition variant swap.'
+    };
+  }
+
+  // Pre-merge blueprints once for the entire batch instead of rebuilding per asset
+  const preMergedBlueprints: SearchableBlueprintLike[] = [
+    ...(Array.isArray(allBlueprints) ? allBlueprints.filter(Boolean) : []),
+    ...APARTMENT_BUILDING_CATALOG_BLUEPRINTS,
+    ...APARTMENT_1990S_HOTEL_CATALOG_BLUEPRINTS
+  ];
+
+  const swappedAssets: PlacedAsset[] = [];
+  const swappedIds: string[] = [];
+
+  const updatedAssets = safeAssets.map((item) => {
+    if (!item || !idSet.has(item.id)) {
+      return item;
+    }
+    const res = swapAssetConditionVariant(item, safeVariant, preMergedBlueprints);
+    swappedAssets.push(res.swappedAsset);
+    swappedIds.push(res.swappedAsset.id);
+    return res.swappedAsset;
+  });
+
+  const variantLabel =
+    safeVariant === 'updated'
+      ? 'Updated (1990s Set)'
+      : safeVariant === 'unkempt'
+        ? 'Unkempt (1978 Grime + Flicker)'
+        : 'Pristine (1978 Intact)';
+
+  const message =
+    swappedAssets.length === 1
+      ? `Swapped "${swappedAssets[0].name}" to ${variantLabel}.`
+      : `Batch-swapped ${swappedAssets.length} selected assets to ${variantLabel} in a single update.`;
+
+  return {
+    updatedAssets,
+    swappedAssets,
+    swappedIds,
+    swappedCount: swappedAssets.length,
+    conditionVariant: safeVariant,
+    message
+  };
+}
+
+/**
+ * Resolves the shared character interaction animation gesture (`ScheduledActivityGesture`)
+ * for any placed asset so all characters share the same basic rig movements:
+ * - Chairs, armchairs, sofas, stools, benches -> 'sit_chair'
+ * - Beds, mattresses, cots -> 'lay_bed'
+ * - Doors, secret walls, hinged passages -> 'open_door'
+ * - Button/switch activated assets (TVs, radios, phones, intercoms, lamps, elevators, appliances) -> 'press_button'
+ * - Clues, notebooks, keys, trunks, props -> 'pickup_item'
+ */
+export function resolveAssetInteractionAnimationGesture(
+  asset: Partial<PlacedAsset> | SearchableBlueprintLike | null | undefined
+): ScheduledActivityGesture {
+  if (!asset) return 'press_button';
+  const sub = (asset.subType || '').toLowerCase();
+  const name = (asset.name || '').toLowerCase();
+  const cat = asset.category;
+  const combined = `${sub} ${name}`;
+
+  if (
+    cat === 'door' ||
+    cat === 'secret_wall' ||
+    Boolean((asset as Partial<PlacedAsset>).isSecretPassage) ||
+    combined.includes('door') ||
+    combined.includes('passage')
+  ) {
+    return 'open_door';
+  }
+
+  if (
+    combined.includes('bed') ||
+    combined.includes('mattress') ||
+    combined.includes('cot') ||
+    combined.includes('bunk')
+  ) {
+    return 'lay_bed';
+  }
+
+  if (
+    combined.includes('chair') ||
+    combined.includes('armchair') ||
+    combined.includes('sofa') ||
+    combined.includes('couch') ||
+    combined.includes('stool') ||
+    combined.includes('bench') ||
+    combined.includes('recliner') ||
+    combined.includes('loveseat')
+  ) {
+    return 'sit_chair';
+  }
+
+  if (
+    cat === 'appliance' ||
+    cat === 'lighting' ||
+    isTvOrCrtScreenAsset(asset) ||
+    combined.includes('button') ||
+    combined.includes('switch') ||
+    combined.includes('intercom') ||
+    combined.includes('phone') ||
+    combined.includes('radio') ||
+    combined.includes('elevator') ||
+    combined.includes('lamp') ||
+    combined.includes('sconce') ||
+    combined.includes('tv') ||
+    combined.includes('computer') ||
+    combined.includes('terminal') ||
+    combined.includes('vending') ||
+    combined.includes('cooler') ||
+    combined.includes('radiator') ||
+    combined.includes('clock') ||
+    combined.includes('bell')
+  ) {
+    // Same reach out and touch animation for each button/switch activated asset
+    return 'press_button';
+  }
+
+  if (
+    cat === 'clue_prop' ||
+    combined.includes('key') ||
+    combined.includes('notebook') ||
+    combined.includes('cassette') ||
+    combined.includes('dictaphone') ||
+    combined.includes('trunk') ||
+    combined.includes('suitcase') ||
+    combined.includes('item') ||
+    combined.includes('prop') ||
+    combined.includes('clue')
+  ) {
+    return 'pickup_item';
+  }
+
+  return 'press_button';
+}
+
+/**
+ * Returns true if the given asset or blueprint is an Invisible Event Trigger volume.
+ */
+export function isInvisibleTriggerAsset(
+  asset: Partial<PlacedAsset> | SearchableBlueprintLike | null | undefined
+): boolean {
+  if (!asset) return false;
+  if ((asset as Partial<PlacedAsset>).isInvisibleTrigger) return true;
+  const sub = (asset.subType || '').toLowerCase();
+  const tags = (asset.tags || []).map((t) => t.toLowerCase());
+  return (
+    sub === 'invisible_event_trigger' ||
+    sub.includes('invisible_trigger') ||
+    tags.includes('invisible-trigger') ||
+    tags.includes('event-trigger')
+  );
+}
+
+export interface FiredInvisibleTriggerEvent {
+  triggerId: string;
+  triggerName: string;
+  eventType: InvisibleTriggerEventType;
+  message: string;
+  soundPresetId?: string;
+  targetAssetId?: string;
+  sanityDelta: number;
+}
+
+/**
+ * Evaluates all invisible event triggers on `currentFloor` against `playerPos` ([x, y, z]).
+ * When the player steps inside an invisible trigger's bounding footprint (or `triggerRadius`),
+ * activates the trigger and returns the fired in-game event(s) and updated assets.
+ */
+export function evaluateInvisibleTriggersAtPosition(
+  playerPos: readonly [number, number, number],
+  currentFloor: FloorId,
+  assets: readonly PlacedAsset[]
+): {
+  activatedTriggers: PlacedAsset[];
+  firedTriggers: PlacedAsset[];
+  updatedAssets: PlacedAsset[];
+  eventsFired: FiredInvisibleTriggerEvent[];
+  triggeredEvents: FiredInvisibleTriggerEvent[];
+  bannerMessage: string;
+} {
+  const safeAssets = Array.isArray(assets) ? assets : [];
+  const px = Number(playerPos?.[0]) || 0;
+  const pz = Number(playerPos?.[2]) || 0;
+
+  const activatedTriggers: PlacedAsset[] = [];
+  const eventsFired: FiredInvisibleTriggerEvent[] = [];
+  const secretDoorsToOpen = new Set<string>();
+  let anyChanged = false;
+
+  const firstPassAssets = safeAssets.map((asset) => {
+    if (!asset || asset.floor !== currentFloor || !isInvisibleTriggerAsset(asset)) {
+      return asset;
+    }
+
+    const [ax, , az] = asset.position || [0, 0, 0];
+    const [w, , d] = asset.dimensions || [2, 2, 2];
+    const radius = typeof asset.triggerRadius === 'number' && asset.triggerRadius > 0
+      ? asset.triggerRadius
+      : Math.max(w, d) * 0.55;
+
+    const dx = Math.abs(px - ax);
+    const dz = Math.abs(pz - az);
+    const dist = Math.hypot(px - ax, pz - az);
+    const insideBox = dx <= w * 0.55 && dz <= d * 0.55;
+    const insideRadius = dist <= radius;
+    const isInside = insideBox || insideRadius;
+
+    if (!isInside) {
+      if (asset.isActivated) {
+        anyChanged = true;
+        return {
+          ...asset,
+          isActivated: false
+        };
+      }
+      return asset;
+    }
+
+    const triggerOnce = asset.triggerOnce ?? false;
+    if (triggerOnce && asset.hasTriggered) {
+      return asset;
+    }
+
+    // Only fire on fresh entry into the trigger volume (`!asset.isActivated`)
+    if (asset.isActivated) {
+      return asset;
+    }
+
+    anyChanged = true;
+    const eventType: InvisibleTriggerEventType = asset.triggerEventType || 'sound_ambience';
+    const nextCount = (asset.triggeredCount || 0) + 1;
+    const customNote = (asset.triggerPayload || asset.inspectText || '').trim();
+
+    let message = `⚡ In-Game Event Triggered: "${asset.name}"`;
+    let sanityDelta = 0;
+    let soundPresetId = asset.soundPresetId || 'sfx_hotel_ambience_loop';
+
+    if (eventType === 'sound_ambience') {
+      message = customNote || `🔊 Invisible Trigger [${asset.name}]: Distant timber creaks and muffled whispers echo through the walls.`;
+      soundPresetId = asset.soundPresetId || 'sfx_hotel_ambience_loop';
+    } else if (eventType === 'open_secret_passage') {
+      message = customNote || `🗝️ Invisible Trigger [${asset.name}]: A concealed mortise latch clicks—a nearby secret passage shifts open!`;
+      soundPresetId = asset.soundPresetId || 'sfx_door_creak';
+      if (asset.triggerTargetId) {
+        secretDoorsToOpen.add(asset.triggerTargetId);
+      } else {
+        // Find nearest secret passage or door on the same floor
+        const nearestPassage = safeAssets.find(
+          (a) =>
+            a.floor === currentFloor &&
+            a.id !== asset.id &&
+            (a.isSecretPassage || a.category === 'secret_wall' || a.category === 'door')
+        );
+        if (nearestPassage) {
+          secretDoorsToOpen.add(nearestPassage.id);
+        }
+      }
+    } else if (eventType === 'sanity_shock') {
+      sanityDelta = -8;
+      message = customNote || `🌀 Invisible Trigger [${asset.name}]: A sudden 33Hz sub-vault pressure wave chills the corridor (Sanity -8).`;
+      soundPresetId = asset.soundPresetId || 'sfx_tape_recorder';
+    } else if (eventType === 'lights_flicker') {
+      message = customNote || `💡 Invisible Trigger [${asset.name}]: Fluorescent ballast tubes sputter and dip across ${currentFloor.toUpperCase()}!`;
+      soundPresetId = asset.soundPresetId || 'sfx_door_latch';
+    } else if (eventType === 'npc_anomaly') {
+      message = customNote || `👁️ Invisible Trigger [${asset.name}]: Footsteps hurry behind the wainscoting as a tenant shifts schedule!`;
+      soundPresetId = asset.soundPresetId || 'sfx_footstep_wood';
+    } else if (eventType === 'clue_reveal') {
+      sanityDelta = 4;
+      message = customNote || `🔍 Invisible Trigger [${asset.name}]: You notice a concealed architectural anomaly here (+4 Sanity).`;
+      soundPresetId = asset.soundPresetId || 'sfx_clue_discover';
+    }
+
+    const updatedTrigger: PlacedAsset = {
+      ...asset,
+      isInvisibleTrigger: true,
+      isActivated: true,
+      hasTriggered: true,
+      triggeredCount: nextCount,
+      interactionStateLabel: `TRIGGERED (#${nextCount})`
+    };
+
+    activatedTriggers.push(updatedTrigger);
+    eventsFired.push({
+      triggerId: asset.id,
+      triggerName: asset.name,
+      eventType,
+      message,
+      soundPresetId,
+      targetAssetId: asset.triggerTargetId,
+      sanityDelta
+    });
+
+    return updatedTrigger;
+  });
+
+  if (!anyChanged && secretDoorsToOpen.size === 0) {
+    return {
+      activatedTriggers: [],
+      firedTriggers: [],
+      updatedAssets: [...safeAssets],
+      eventsFired: [],
+      triggeredEvents: [],
+      bannerMessage: ''
+    };
+  }
+
+  const finalAssets =
+    secretDoorsToOpen.size > 0
+      ? firstPassAssets.map((a) =>
+          secretDoorsToOpen.has(a.id)
+            ? { ...initiateAssetHingeToggle(a, Date.now()), isOpen: true }
+            : a
+        )
+      : firstPassAssets;
+
+  return {
+    activatedTriggers,
+    firedTriggers: activatedTriggers,
+    updatedAssets: finalAssets,
+    eventsFired,
+    triggeredEvents: eventsFired,
+    bannerMessage: eventsFired[0]?.message || ''
   };
 }
 

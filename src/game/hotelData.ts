@@ -37,6 +37,14 @@ export interface AssetBlueprint {
   structuralConstraint?: string;
   predecessor1978Id?: string;
   paired1990sId?: string;
+  isInvisibleTrigger?: boolean;
+  triggerEventType?:
+    | 'sound_ambience'
+    | 'open_secret_passage'
+    | 'sanity_shock'
+    | 'lights_flicker'
+    | 'npc_anomaly'
+    | 'clue_reveal';
 }
 
 export function createBlueprintFromAsset(asset: PlacedAsset): AssetBlueprint {
@@ -49,6 +57,8 @@ export function createBlueprintFromAsset(asset: PlacedAsset): AssetBlueprint {
     defaultTexture: asset.textureId,
     collidable: asset.collidable,
     isSecretPassage: asset.isSecretPassage,
+    isInvisibleTrigger: asset.isInvisibleTrigger,
+    triggerEventType: asset.triggerEventType,
     description: asset.inspectText || `Generated 3D asset (${asset.name}) added to catalog.`,
     compositeParts: asset.compositeParts ? [...asset.compositeParts] : undefined,
     referenceImageUrl: asset.customTextureUrl,
@@ -68,6 +78,20 @@ export function createBlueprintFromAsset(asset: PlacedAsset): AssetBlueprint {
 }
 
 export const ASSET_CATALOG: AssetBlueprint[] = [
+  {
+    subType: 'invisible_event_trigger',
+    name: 'Invisible In-Game Event Trigger Volume',
+    category: 'clue_prop',
+    defaultDimensions: [2.4, 2.2, 2.4],
+    defaultColor: '#06b6d4',
+    defaultTexture: 'aged_brass',
+    collidable: false,
+    isInvisibleTrigger: true,
+    triggerEventType: 'sound_ambience',
+    soundPresetId: 'sfx_hotel_ambience_loop',
+    tags: ['game-item', 'invisible-trigger', 'event-trigger', 'interactive', 'audio-linked'],
+    description: 'Invisible spatial trigger volume that activates in-game events (ambience, secret passage latch, sanity shock, lights flicker, or tenant anomaly) when the player walks through it.'
+  },
   {
     subType: 'brick_wall_segment',
     name: 'Soot-Stained Tenement Brick Wall',

@@ -86,12 +86,16 @@ import {
   instantiateAssetSetOnFloor,
   AssetConditionVariant,
   swapAssetConditionVariant,
+  batchSwapAssetsConditionVariant,
   swapAssetVisualDesign,
   toggleAssetInteractiveState,
   DEFAULT_SNAP_GRID_SIZE,
   normalizeSnapGridSize,
   safeExecuteCatalogOrVariantCallback,
-  evaluateRoomSuspicionLevel
+  evaluateRoomSuspicionLevel,
+  resolveAssetInteractionAnimationGesture,
+  isInvisibleTriggerAsset,
+  evaluateInvisibleTriggersAtPosition
 } from './game/rules';
 import {
   INITIAL_PLACED_ASSETS,
@@ -311,12 +315,19 @@ export default function App() {
 
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [marqueeModeActive, setMarqueeModeActive] = useState<boolean>(false);
   const [quickEditWindowOpen, setQuickEditWindowOpen] = useState<boolean>(false);
   const [selectedAssetScreenPos, setSelectedAssetScreenPos] = useState<{ x: number; y: number }>({
     x: 680,
     y: 160
   });
+  const [selectedAgentScreenPos, setSelectedAgentScreenPos] = useState<{ x: number; y: number }>({
+    x: 680,
+    y: 160
+  });
+  const lastPlayerWalkPosRef = useRef<[number, number, number]>([0, 0, 4]);
+  const lastTriggerFireTimeRef = useRef<Record<string, number>>({});
   const [activeBlueprint, setActiveBlueprint] = useState<AssetBlueprint | null>(null);
   const [showTPoseMannequin, setShowTPoseMannequin] = useState<boolean>(false);
   const [isolateSelectedAsset, setIsolateSelectedAsset] = useState<boolean>(false);
@@ -1073,12 +1084,58 @@ export default function App() {
     setMarqueeModeActive(false);
     setSelectedAssetId(null);
     setSelectedAssetIds([]);
+    setSelectedAgentId(null);
     setQuickEditWindowOpen(false);
     setIsolateSelectedAsset(false);
     setStatusBanner(
-      'Pointer cleared [ESC] — Click or Shift+Click 3D objects to select, press [E] to interact, or press [F] for Quick Edit.'
+      'Pointer cleared [ESC] — Click 3D objects or characters to select, press [E] to interact, or press [F] for Quick Edit.'
     );
   }, []);
+
+  // Select a character rig by clicking in Build Mode or First-Person Walk Mode
+  const handleSelectAgent = useCallback(
+    (agentId: string | null) => {
+      if (!agentId) {
+        setSelectedAgentId(null);
+        return;
+      }
+      setActiveBlueprint(null);
+      setSelectedAssetId(null);
+      setSelectedAssetIds([]);
+      setSelectedAgentId(agentId);
+      const foundAgent = agents.find((ag) => ag.id === agentId);
+      if (foundAgent) {
+        soundFX.playPlaceAsset();
+        setStatusBanner(
+          `🧑 Selected Character "${foundAgent.name}" (${foundAgent.occupation} · Room ${foundAgent.roomNumber}) — Press [F] to open Character Quick Parameters!`
+        );
+      }
+    },
+    [agents]
+  );
+
+  // Move selected character rig by dragging on floor in Build Mode
+  const handleMoveSelectedAgentTo = useCallback((agentId: string, x: number, z: number) => {
+    const rx = Math.round(x * 2) / 2;
+    const rz = Math.round(z * 2) / 2;
+    setAgents((prev) =>
+      prev.map((ag) =>
+        ag.id === agentId ? { ...ag, position: [rx, ag.position[1], rz] } : ag
+      )
+    );
+  }, []);
+
+  // Update character parameters from [F] Quick Edit Window
+  const handleUpdateAgentFromQuickEdit = useCallback(
+    (updated: HotelAgentProfile, message?: string) => {
+      setAgents((prev) => prev.map((ag) => (ag.id === updated.id ? updated : ag)));
+      saveItemToDedicatedFolder('character_rigs', updated.name, updated, updated.id);
+      if (message) {
+        setStatusBanner(`🧑 ${message}`);
+      }
+    },
+    [saveItemToDedicatedFolder]
+  );
 
   // Select single asset or Shift+Click multi-select
   const handleSelectAsset = useCallback(
@@ -1091,6 +1148,7 @@ export default function App() {
         return;
       }
       setActiveBlueprint(null);
+      setSelectedAgentId(null);
       setSelectedAssetIds((prev) => {
         const next = toggleAssetInSelection(prev, id, shiftKey);
         const primary = next.length > 0 ? next[next.length - 1] : null;
@@ -1308,6 +1366,20 @@ export default function App() {
       if (isActionKeyPressed('quick_edit', e.code, keybindings) && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         const qeLabel = getPrimaryActionKeyLabel('quick_edit', keybindings);
+        if (selectedAgentId) {
+          soundFX.playPlaceAsset();
+          setQuickEditWindowOpen((prev) => {
+            const nextOpen = !prev;
+            const foundAg = agents.find((ag) => ag.id === selectedAgentId);
+            setStatusBanner(
+              nextOpen
+                ? `🧑 Opened Character Quick Parameters [${qeLabel}] for "${foundAg ? foundAg.name : 'Character'}" — Adjust trust, suspicion, expression, or shared rig animation!`
+                : `Closed Character Quick Parameters [${qeLabel}].`
+            );
+            return nextOpen;
+          });
+          return;
+        }
         if (selectedAssetId) {
           soundFX.playPlaceAsset();
           setQuickEditWindowOpen((prev) => {
@@ -1320,11 +1392,32 @@ export default function App() {
             );
             return nextOpen;
           });
-        } else {
-          setStatusBanner(
-            `Select an asset first (Click or Shift+Click), then press [${qeLabel}] to open the Quick Edit Window.`
-          );
+          return;
         }
+        // In First-Person Walk Mode (or Build Mode), if no character/asset is clicked yet, auto-select nearest character on current floor when pressing [F]
+        const floorAgents = agents.filter(
+          (ag) => ag.floor === currentFloor && ag.role !== 'helper_entity'
+        );
+        if (floorAgents.length > 0) {
+          const px = lastPlayerWalkPosRef.current[0];
+          const pz = lastPlayerWalkPosRef.current[2];
+          const sorted = [...floorAgents].sort(
+            (a, b) =>
+              Math.hypot(a.position[0] - px, a.position[2] - pz) -
+              Math.hypot(b.position[0] - px, b.position[2] - pz)
+          );
+          const closestAg = sorted[0];
+          setSelectedAgentId(closestAg.id);
+          setQuickEditWindowOpen(true);
+          soundFX.playPlaceAsset();
+          setStatusBanner(
+            `🧑 Quick-Selected "${closestAg.name}" [${qeLabel}] — Adjust character parameters or shared rig animation!`
+          );
+          return;
+        }
+        setStatusBanner(
+          `Click a 3D asset or character first, then press [${qeLabel}] to open the Quick Edit Window.`
+        );
         return;
       }
 
@@ -1454,6 +1547,8 @@ export default function App() {
     recordUndoSnapshot,
     selectedAssetId,
     selectedAssetIds,
+    selectedAgentId,
+    agents,
     assets,
     mode,
     catalogAssets,
@@ -1493,11 +1588,19 @@ export default function App() {
             tags: activeBlueprint.tags ? [...activeBlueprint.tags] : undefined,
             soundPresetId: activeBlueprint.soundPresetId,
             pairedVariantId: activeBlueprint.pairedVariantId,
-            conditionVariant: activeBlueprint.conditionVariant
+            conditionVariant: activeBlueprint.conditionVariant,
+            isInvisibleTrigger: activeBlueprint.isInvisibleTrigger,
+            triggerEventType: activeBlueprint.triggerEventType,
+            triggerRadius: activeBlueprint.isInvisibleTrigger ? 2.0 : undefined,
+            triggerOnce: activeBlueprint.isInvisibleTrigger ? false : undefined,
+            triggerPayload: activeBlueprint.isInvisibleTrigger
+              ? `Invisible Trigger activated in ${currentRoomLabel}!`
+              : undefined
           };
           setAssets((prev) => [...prev, newAsset]);
           setSelectedAssetId(newAsset.id);
           setSelectedAssetIds([newAsset.id]);
+          setSelectedAgentId(null);
           setActiveBlueprint(null);
           saveItemToDedicatedFolder('environment_3d', newAsset.name, newAsset, newAsset.id);
           setStatusBanner(
@@ -1738,12 +1841,30 @@ export default function App() {
   );
 
   // Dedicated "E" key interaction handler across Walkthrough & 3D Asset Builder modes
-  // Toggles doors/secret passages AND toggles interactive state on TVs (white "on" screen), lamps, monitors, radios, appliances, and plumbing!
+  // Toggles doors/secret passages, triggers shared character interact animations (sit_chair, open_door, press_button, pickup_item, lay_bed), and toggles interactive state!
   const handleInteractWithAssetKeyE = useCallback(
     (asset: PlacedAsset) => {
       setSelectedAssetId(asset.id);
       setSelectedAssetIds((prev) => (prev.includes(asset.id) ? prev : [asset.id]));
+      setSelectedAgentId(null);
       setActiveBlueprint(null);
+
+      // Resolve shared character rig interact animation for this specific asset
+      const interactGesture = resolveAssetInteractionAnimationGesture(asset);
+      setAgents((prevAgents) => {
+        const floorAgents = prevAgents.filter(
+          (ag) => ag.floor === asset.floor && ag.role !== 'helper_entity'
+        );
+        if (floorAgents.length === 0) return prevAgents;
+        const nearestAg = [...floorAgents].sort(
+          (a, b) =>
+            Math.hypot(a.position[0] - asset.position[0], a.position[2] - asset.position[2]) -
+            Math.hypot(b.position[0] - asset.position[0], b.position[2] - asset.position[2])
+        )[0];
+        return prevAgents.map((ag) =>
+          ag.id === nearestAg.id ? { ...ag, activeInteractGesture: interactGesture } : ag
+        );
+      });
 
       if (asset.isSecretPassage || asset.category === 'door' || asset.category === 'secret_wall') {
         handleToggleAssetOpen(asset);
@@ -1755,12 +1876,54 @@ export default function App() {
       const { updatedAsset, visualState, message } = toggleAssetInteractiveState(asset);
       setAssets((prev) => prev.map((a) => (a.id === asset.id ? updatedAsset : a)));
       saveItemToDedicatedFolder('environment_3d', updatedAsset.name, updatedAsset, updatedAsset.id);
-      setStatusBanner(`${message} (${visualState.statusSummary}) — Press [F] to open Quick Edit.`);
+      setStatusBanner(
+        `${message} (${visualState.statusSummary}) · 🎬 Shared Rig Animation: [${interactGesture}] — Press [F] to open Quick Edit.`
+      );
     },
     [handleToggleAssetOpen, recordUndoSnapshot, saveItemToDedicatedFolder]
   );
 
-  // Swap selected asset(s) between 'pristine', 'unkempt', and 'updated' (1990s asset set) and re-texture via procedural weathering
+  // Evaluate Invisible In-Game Event Triggers when the player moves in First-Person Walk Mode
+  const handlePlayerPositionStep = useCallback(
+    (pos: [number, number, number], floor: FloorId) => {
+      lastPlayerWalkPosRef.current = pos;
+      const hasAnyTriggers = assets.some((a) => a.floor === floor && isInvisibleTriggerAsset(a));
+      if (!hasAnyTriggers) return;
+
+      const evalRes = evaluateInvisibleTriggersAtPosition(pos, floor, assets);
+      if (evalRes.firedTriggers.length === 0) return;
+
+      const nowMs = Date.now();
+      const newlyFired = evalRes.firedTriggers.filter((trig) => {
+        const lastFired = lastTriggerFireTimeRef.current[trig.id] || 0;
+        if (nowMs - lastFired < 3500) return false;
+        lastTriggerFireTimeRef.current[trig.id] = nowMs;
+        return true;
+      });
+      if (newlyFired.length === 0) return;
+
+      setAssets(evalRes.updatedAssets);
+      const primaryTrigger = newlyFired[0];
+      if (primaryTrigger.soundPresetId) {
+        audioEngine.playSoundEffect(primaryTrigger.soundPresetId);
+      } else {
+        soundFX.playClueFound();
+      }
+      if (evalRes.triggeredEvents[0]?.eventType === 'npc_anomaly') {
+        setAgents((prev) =>
+          prev.map((ag) =>
+            ag.floor === floor
+              ? { ...ag, suspicionLevel: Math.min(100, ag.suspicionLevel + 15), status: 'erratic' }
+              : ag
+          )
+        );
+      }
+      setStatusBanner(evalRes.bannerMessage || `👻 Activated Invisible Trigger "${primaryTrigger.name}"!`);
+    },
+    [assets]
+  );
+
+  // Swap selected asset(s) between 'pristine', 'unkempt', and 'updated' (1990s asset set) in a SINGLE atomic batch update
   const handleSwapConditionVariant = useCallback(
     (targetVariant: AssetConditionVariant) => {
       safeExecuteCatalogOrVariantCallback(
@@ -1776,35 +1939,39 @@ export default function App() {
           recordUndoSnapshot(`Swap condition to "${targetVariant}" (${targetIds.length} asset(s))`);
           soundFX.playPlaceAsset();
 
-          const idSet = new Set(targetIds);
-          let lastMessage = '';
-          setAssets((prev) =>
-            prev.map((a) => {
-              if (!idSet.has(a.id)) return a;
-              const res = swapAssetConditionVariant(a, targetVariant, catalogAssets);
-              lastMessage = res.message;
-              saveItemToDedicatedFolder(
-                'environment_3d',
-                res.swappedAsset.name,
-                res.swappedAsset,
-                res.swappedAsset.id
-              );
-              return res.swappedAsset;
-            })
+          const batchResult = batchSwapAssetsConditionVariant(
+            assets,
+            targetIds,
+            targetVariant,
+            catalogAssets
           );
+          if (batchResult.swappedAssets.length === 0) return;
 
-          setStatusBanner(
-            targetIds.length > 1
-              ? `🎭 Swapped ${targetIds.length} selected assets to "${targetVariant.toUpperCase()}" variant & re-textured via procedural weathering!`
-              : lastMessage || `Swapped asset condition to "${targetVariant}".`
-          );
+          setAssets(batchResult.updatedAssets);
+          batchResult.swappedAssets.forEach((swapped) => {
+            saveItemToDedicatedFolder(
+              'environment_3d',
+              swapped.name,
+              swapped,
+              swapped.id
+            );
+          });
+
+          setStatusBanner(batchResult.message);
         },
         undefined,
         `App.handleSwapConditionVariant(${targetVariant})`,
         setStatusBanner
       );
     },
-    [selectedAssetIds, selectedAssetId, catalogAssets, recordUndoSnapshot, saveItemToDedicatedFolder]
+    [
+      assets,
+      selectedAssetIds,
+      selectedAssetId,
+      catalogAssets,
+      recordUndoSnapshot,
+      saveItemToDedicatedFolder
+    ]
   );
 
   // Atomic visual design swapper (cycles or selects among Meshy.ai 3D visual design variants without stale closures)
@@ -3367,6 +3534,7 @@ export default function App() {
   };
 
   const selectedAsset = assets.find((a) => a.id === selectedAssetId) || null;
+  const selectedAgent = agents.find((ag) => ag.id === selectedAgentId) || null;
   const floorAssets = assets.filter((a) => a.floor === currentFloor);
   const lastUndoLabel = undoStack.length > 0 ? undoStack[undoStack.length - 1].actionLabel : null;
   const activeSelectionCount =
@@ -3401,6 +3569,13 @@ export default function App() {
         agents={agents}
         selectedAssetId={selectedAssetId}
         selectedAssetIds={selectedAssetIds}
+        selectedAgentId={selectedAgentId}
+        onSelectAgent={handleSelectAgent}
+        onMoveSelectedAgentTo={handleMoveSelectedAgentTo}
+        onSelectedAgentScreenPosition={(pos) => {
+          if (pos) setSelectedAgentScreenPos(pos);
+        }}
+        onPlayerPositionStep={handlePlayerPositionStep}
         marqueeModeActive={marqueeModeActive}
         activeBlueprint={activeBlueprint}
         showTPoseMannequin={showTPoseMannequin}
@@ -3446,17 +3621,17 @@ export default function App() {
         snapToAssetPlacement={surfaceSnapEnabled}
       />
 
-      {/* 2. FLOATING [F] QUICK EDIT WINDOW TO THE RIGHT OF THE SELECTED ASSET */}
-      {quickEditWindowOpen && selectedAsset && mode !== 'character' && mode !== 'soundboard' && (
+      {/* 2. FLOATING [F] QUICK EDIT WINDOW TO THE RIGHT OF THE SELECTED ASSET OR SELECTED CHARACTER */}
+      {quickEditWindowOpen && (selectedAsset || selectedAgent) && mode !== 'character' && mode !== 'soundboard' && (
         <QuickEditWindowF
           primaryAsset={selectedAsset}
           selectedCount={activeSelectionCount}
-          screenPosition={selectedAssetScreenPos}
+          screenPosition={selectedAgent ? selectedAgentScreenPos : selectedAssetScreenPos}
           onClose={() => setQuickEditWindowOpen(false)}
           onBatchModify={handleBatchModifySelected}
           onInteractKeyE={handleInteractWithAssetKeyE}
           onDuplicate={handleDuplicateAsset}
-          onDeleteSelected={() => handleDeleteAsset(selectedAsset.id)}
+          onDeleteSelected={() => selectedAsset && handleDeleteAsset(selectedAsset.id)}
           onCopySelected={handleCopySelectedAssets}
           onPasteClipboard={handlePasteClipboardAssets}
           clipboardCount={assetClipboard?.items?.length || 0}
@@ -3465,6 +3640,15 @@ export default function App() {
           onSwapConditionVariant={handleSwapConditionVariant}
           onSwapVisualDesign={handleSwapVisualDesign}
           globalAnimationFps={globalAnimationFps}
+          selectedAgent={selectedAgent}
+          onUpdateAgent={handleUpdateAgentFromQuickEdit}
+          onClearAgentSelection={() => setSelectedAgentId(null)}
+          onOpenCharacterCreator={(ag) => {
+            setCustomAppearance(ag.appearance);
+            setQuickEditWindowOpen(false);
+            setMode('character');
+            setStatusBanner(`Opened 2 · Create-A-Character Studio for "${ag.name}"!`);
+          }}
           onSaveSelectionAsSet={(setName) =>
             handleSaveSelectionAsAssetSet(
               setName,

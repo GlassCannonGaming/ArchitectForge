@@ -40,7 +40,8 @@ import {
   sampleUnkemptFlickerIntensity,
   STUDIO_DARK_UI_WHITE_CANVAS_SPEC,
   computeBuildPlacementPosition,
-  DEFAULT_SNAP_GRID_SIZE
+  DEFAULT_SNAP_GRID_SIZE,
+  isInvisibleTriggerAsset
 } from '../game/rules';
 import {
   buildAssetMeshGroup,
@@ -93,6 +94,11 @@ interface HotelViewport3DProps {
   globalAnimationFps?: GlobalAnimationFps;
   snapGridSize?: number;
   snapToAssetPlacement?: boolean;
+  selectedAgentId?: string | null;
+  onSelectAgent?: (agentId: string | null) => void;
+  onMoveSelectedAgentTo?: (agentId: string, x: number, z: number) => void;
+  onSelectedAgentScreenPosition?: (pos: { x: number; y: number } | null) => void;
+  onPlayerPositionStep?: (pos: [number, number, number], floor: FloorId) => void;
 }
 
 // Pre-allocated scratch math helpers outside the animation loop (Zero GC)
@@ -139,7 +145,12 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
   keybindings = DEFAULT_KEYBINDINGS,
   globalAnimationFps = DEFAULT_GLOBAL_ANIMATION_FPS,
   snapGridSize = DEFAULT_SNAP_GRID_SIZE,
-  snapToAssetPlacement = true
+  snapToAssetPlacement = true,
+  selectedAgentId = null,
+  onSelectAgent,
+  onMoveSelectedAgentTo,
+  onSelectedAgentScreenPosition,
+  onPlayerPositionStep
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [marqueeBox, setMarqueeBox] = useState<{
@@ -198,7 +209,12 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
     keybindings,
     globalAnimationFps,
     snapGridSize,
-    snapToAssetPlacement
+    snapToAssetPlacement,
+    selectedAgentId,
+    onSelectAgent,
+    onMoveSelectedAgentTo,
+    onSelectedAgentScreenPosition,
+    onPlayerPositionStep
   });
 
   useEffect(() => {
@@ -236,7 +252,12 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
       keybindings,
       globalAnimationFps,
       snapGridSize,
-      snapToAssetPlacement
+      snapToAssetPlacement,
+      selectedAgentId,
+      onSelectAgent,
+      onMoveSelectedAgentTo,
+      onSelectedAgentScreenPosition,
+      onPlayerPositionStep
     };
   });
 
@@ -279,6 +300,7 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
     agents,
     selectedAssetId,
     selectedAssetIds,
+    selectedAgentId,
     activeBlueprint,
     showTPoseMannequin,
     isolateSelectedAsset,
@@ -641,6 +663,9 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
       floorAssets.forEach((asset) => {
         const isSel = selectedSet.has(asset.id);
         const meshGroup = buildAssetMeshGroup(asset, maxAnisotropy, isSel);
+        if (isInvisibleTriggerAsset(asset) && st.mode === 'walkthrough') {
+          meshGroup.visible = false;
+        }
         dynamicAssetsGroup.add(meshGroup);
         interactableObjects.push(meshGroup);
       });
@@ -650,7 +675,20 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
         (ag) => ag.floor === st.currentFloor && ag.role !== 'helper_entity'
       );
       floorAgents.forEach((agent) => {
-        const charGroup = buildCharacterToonGroup(agent.appearance, false);
+        const isAgentSelected = st.selectedAgentId === agent.id;
+        const charGroup = buildCharacterToonGroup(agent.appearance, isAgentSelected);
+        if (isAgentSelected) {
+          const ringMesh = new THREE.Mesh(
+            new THREE.RingGeometry(0.42, 0.55, 24),
+            new THREE.MeshBasicMaterial({
+              color: 0x8b5cf6,
+              side: THREE.DoubleSide
+            })
+          );
+          ringMesh.rotation.x = -Math.PI / 2;
+          ringMesh.position.y = 0.03;
+          charGroup.add(ringMesh);
+        }
         charGroup.position.set(agent.position[0], agent.position[1], agent.position[2]);
         charGroup.userData = { ...charGroup.userData, agentId: agent.id, agent, isCharacterRig: true };
         dynamicAssetsGroup.add(charGroup);
@@ -727,6 +765,7 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
     let isMarqueeDragging = false;
     let marqueeAdditiveShift = false;
     let draggingAssetId: string | null = null;
+    let draggingAgentId: string | null = null;
     let hasRecordedDragStart = false;
     let lastPointerX = 0;
     let lastPointerY = 0;
@@ -1072,9 +1111,17 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
           while (obj && !obj.userData?.assetId && !obj.userData?.agentId) {
             obj = obj.parent;
           }
+          if (obj?.userData?.agentId) {
+            const hitAgentId = obj.userData.agentId as string;
+            st.onSelectAsset(null, false);
+            st.onSelectAgent?.(hitAgentId);
+            draggingAgentId = hitAgentId;
+            return;
+          }
           if (obj?.userData?.assetId) {
             const hitId = obj.userData.assetId;
             const hitAsset = obj.userData?.asset as PlacedAsset | undefined;
+            st.onSelectAgent?.(null);
 
             // Alt + Click on an existing wall initiates an Extend Wall Row drag
             if (e.altKey && hitAsset && hitAsset.category === 'wall') {
@@ -1123,14 +1170,21 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
         isPanningCamera = true;
         renderer.domElement.style.cursor = 'grabbing';
         st.onSelectAsset(null, false);
+        st.onSelectAgent?.(null);
       } else if (st.mode === 'walkthrough') {
         const hits = _raycaster.intersectObjects(interactableObjects, true);
         if (hits.length > 0 && hits[0].distance <= 9.0) {
           let obj: THREE.Object3D | null = hits[0].object;
-          while (obj && !obj.userData?.assetId) {
+          while (obj && !obj.userData?.assetId && !obj.userData?.agentId) {
             obj = obj.parent;
           }
+          if (obj?.userData?.agentId) {
+            st.onSelectAsset(null, false);
+            st.onSelectAgent?.(obj.userData.agentId as string);
+            return;
+          }
           if (obj?.userData?.asset) {
+            st.onSelectAgent?.(null);
             st.onSelectAsset(obj.userData.asset.id, e.shiftKey);
             if (obj.userData.asset.isSecretPassage || obj.userData.asset.category === 'door') {
               st.onToggleAssetOpen(obj.userData.asset);
@@ -1239,6 +1293,12 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
         }
 
         const dragDist = Math.hypot(e.clientX - downStartX, e.clientY - downStartY);
+        if (isPointerDown && draggingAgentId && hitPlane && dragDist > 5) {
+          const rawX = Math.max(-HALF_GRID, Math.min(HALF_GRID, hitPoint.x));
+          const rawZ = Math.max(-HALF_GRID, Math.min(HALF_GRID, hitPoint.z));
+          st.onMoveSelectedAgentTo?.(draggingAgentId, rawX, rawZ);
+          return;
+        }
         if (isPointerDown && draggingAssetId && hitPlane && dragDist > 5) {
           if (!hasRecordedDragStart) {
             hasRecordedDragStart = true;
@@ -1364,6 +1424,7 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
       isPointerDown = false;
       isPanningCamera = false;
       draggingAssetId = null;
+      draggingAgentId = null;
       hasRecordedDragStart = false;
     };
 
@@ -1592,11 +1653,15 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
           const ag = child.userData.agent as HotelAgentProfile;
           const isSpeaking = st.activeSpeakingAgentId === ag.id;
           const activeSched = getActiveDailyAction(ag.dailySchedule, st.gameTimeMinutes);
+          const effectiveGesture =
+            ag.activeInteractGesture || activeSched.activityGesture || 'idle_observe';
           const isActivelyPacing =
             !isSpeaking &&
-            (activeSched.activityGesture === 'pace_corridor' ||
-              activeSched.activityGesture === 'sleepwalk_trance' ||
-              ag.status === 'erratic');
+            (effectiveGesture === 'pace_corridor' ||
+              effectiveGesture === 'sleepwalk_trance' ||
+              effectiveGesture === 'run' ||
+              effectiveGesture === 'crawl' ||
+              (!ag.activeInteractGesture && ag.status === 'erratic'));
 
           // Advance character patrol / stride phase and trigger 3D spatialized surface footsteps
           if (!isSpeaking) {
@@ -1604,12 +1669,19 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
               typeof child.userData.stridePhase === 'number'
                 ? (child.userData.stridePhase as number)
                 : (child.id % 5) * 0.7;
-            const strideSpeed = isActivelyPacing ? 2.45 : 1.05;
+            const strideSpeed =
+              effectiveGesture === 'run'
+                ? 4.2
+                : effectiveGesture === 'crawl'
+                ? 1.8
+                : isActivelyPacing
+                ? 2.45
+                : 1.05;
             const nextCharStride = prevCharStride + dt * strideSpeed;
             child.userData.stridePhase = nextCharStride;
 
-            if (isActivelyPacing) {
-              const patrolRadius = activeSched.activityGesture === 'pace_corridor' ? 0.85 : 0.55;
+            if (isActivelyPacing && !ag.activeInteractGesture) {
+              const patrolRadius = effectiveGesture === 'pace_corridor' ? 0.85 : 0.55;
               child.position.x = ag.position[0] + Math.sin(nextCharStride * 0.55) * patrolRadius;
               child.position.z =
                 ag.position[2] + Math.cos(nextCharStride * 0.55) * (patrolRadius * 0.45);
@@ -1637,7 +1709,7 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
           if (lodState.tier !== 'culled') {
             const hybrid = evaluateHybridLowFrameRigState({
               appearance: ag.appearance || st.customCharacterAppearance,
-              gesture: activeSched.activityGesture || 'idle_observe',
+              gesture: effectiveGesture,
               isMoving: isActivelyPacing,
               isSpeaking,
               continuousTimeSec: charAnimTime,
@@ -1755,9 +1827,21 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
             st.onSelectedAssetScreenPosition({ x: sx, y: sy });
           }
         }
+        if (st.selectedAgentId && st.onSelectedAgentScreenPosition) {
+          const selAg = st.agents.find((a) => a.id === st.selectedAgentId);
+          if (selAg) {
+            const rect = renderer.domElement.getBoundingClientRect();
+            _projVec.set(selAg.position[0] + 0.45, selAg.position[1] + 1.35, selAg.position[2]);
+            _projVec.project(camera);
+            const sx = Math.round(((_projVec.x + 1) * 0.5) * rect.width + rect.left + 24);
+            const sy = Math.round(((-_projVec.y + 1) * 0.5) * rect.height + rect.top - 40);
+            st.onSelectedAgentScreenPosition({ x: sx, y: sy });
+          }
+        }
 
         if (st.mode === 'walkthrough') {
           const pose = playerPoseRef.current;
+          st.onPlayerPositionStep?.([pose.x, pose.y, pose.z], st.currentFloor);
           const roomName = getRoomLabelAtPosition(st.currentFloor, pose.x, pose.z);
           const currentSurface = resolveFloorSurfaceMaterialAtPosition(
             pose.x,
@@ -1844,7 +1928,7 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
             promptStr = inspection.hiddenChalkInscription;
           } else if (nearestAgent) {
             const sched = getActiveDailyAction(nearestAgent.dailySchedule, st.gameTimeMinutes);
-            promptStr = `🎙️ Hold [${pttKey}] to Talk Live to ${nearestAgent.name} (${sched.phase}: ${sched.action}) | [${interactKey}] Interrogate`;
+            promptStr = `🎙️ Hold [${pttKey}] to Talk Live to ${nearestAgent.name} (${sched.phase}: ${sched.action}) | Click + [${quickEditKey}] Quick-Edit Parameters | [${interactKey}] Interrogate`;
           } else if (nearestObj) {
             promptStr = `Press [${interactKey}] to Interact, [${crouchKey}] Stealth Crouch, [${flashKey}] Flashlight (${st.flashlightEnabled ? 'ON' : 'OFF'}), or [${quickEditKey}] Quick-Edit "${nearestObj.name}"`;
           }
@@ -1929,6 +2013,44 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
           </span>
         </div>
       )}
+      {/* Active Floor Character Selection Pills (Build Mode & First-Person Walk Mode) */}
+      {(mode === 'architect' || mode === 'walkthrough') &&
+        agents.some((ag) => ag.floor === currentFloor && ag.role !== 'helper_entity') && (
+          <div
+            data-testid="floor-characters-selector-bar"
+            className="fixed bottom-14 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 bg-slate-900/90 backdrop-blur-md border border-violet-500/50 rounded-full px-2.5 py-1 shadow-xl pointer-events-auto"
+          >
+            <span className="text-[10px] font-extrabold text-violet-300 uppercase tracking-wider px-1">
+              🧑 Characters ([F] Params):
+            </span>
+            {agents
+              .filter((ag) => ag.floor === currentFloor && ag.role !== 'helper_entity')
+              .map((ag) => {
+                const isSelected = selectedAgentId === ag.id;
+                return (
+                  <button
+                    key={ag.id}
+                    type="button"
+                    data-testid={`select-floor-character-${ag.id}`}
+                    onClick={() => onSelectAgent?.(ag.id)}
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all flex items-center gap-1 ${
+                      isSelected
+                        ? 'bg-gradient-to-r from-[#7c3aed] to-[#6d28d9] text-white ring-2 ring-amber-300 shadow-xs'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+                    }`}
+                    title={`Click to select ${ag.name} (Room ${ag.roomNumber}), then press [F] for Quick Parameters`}
+                  >
+                    <span>{ag.name}</span>
+                    {ag.activeInteractGesture && ag.activeInteractGesture !== 'idle_observe' && (
+                      <span className="text-[9px] font-mono text-amber-300">
+                        [{ag.activeInteractGesture}]
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+          </div>
+        )}
       {/* Visual Marquee-Select Rectangle Overlay */}
       {marqueeBox && (
         <div

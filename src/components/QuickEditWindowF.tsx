@@ -4,14 +4,19 @@ import {
   computeAssetInteractionVisualState,
   computeUnkemptFlickerCssSpec,
   DEFAULT_GLOBAL_ANIMATION_FPS,
+  FacialExpressionType,
   getAssetVisualDesignVariants,
   GlobalAnimationFps,
   HingeSwingMode,
+  HotelAgentProfile,
+  InvisibleTriggerEventType,
+  isInvisibleTriggerAsset,
   isStructuralHotelAsset,
   isUnkemptOrAgedAsset,
   PlacedAsset,
   resolveAssetConditionVariant,
   safeExecuteCatalogOrVariantCallback,
+  ScheduledActivityGesture,
   swapAssetConditionVariant,
   swapAssetVisualDesign,
   TexturePresetId
@@ -19,7 +24,7 @@ import {
 import { AssetBlueprint } from '../game/hotelData';
 
 interface QuickEditWindowFProps {
-  primaryAsset: PlacedAsset;
+  primaryAsset: PlacedAsset | null;
   selectedCount: number;
   screenPosition: { x: number; y: number };
   onClose: () => void;
@@ -45,6 +50,10 @@ interface QuickEditWindowFProps {
   onSwapConditionVariant?: (variant: AssetConditionVariant) => void;
   onSwapVisualDesign?: (targetSubType: string | 'next') => void;
   globalAnimationFps?: GlobalAnimationFps;
+  selectedAgent?: HotelAgentProfile | null;
+  onUpdateAgent?: (updated: HotelAgentProfile, message?: string) => void;
+  onOpenCharacterCreator?: (agent: HotelAgentProfile) => void;
+  onClearAgentSelection?: () => void;
 }
 
 const SWATCH_COLORS = [
@@ -87,17 +96,333 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
   onUpdateAsset,
   onSwapConditionVariant,
   onSwapVisualDesign,
-  globalAnimationFps = DEFAULT_GLOBAL_ANIMATION_FPS
+  globalAnimationFps = DEFAULT_GLOBAL_ANIMATION_FPS,
+  selectedAgent = null,
+  onUpdateAgent,
+  onOpenCharacterCreator,
+  onClearAgentSelection
 }) => {
   const [customPos, setCustomPos] = useState<{ x: number; y: number } | null>(null);
   const [minimized, setMinimized] = useState<boolean>(false);
   const [setNameDraft, setSetNameDraft] = useState<string>('');
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
 
-  // Reset custom drag offset if primary asset changes
+  // Reset custom drag offset if primary asset or selected agent changes
   useEffect(() => {
     setCustomPos(null);
-  }, [primaryAsset?.id]);
+  }, [primaryAsset?.id, selectedAgent?.id]);
+
+  const baseLeft = Math.max(16, Math.min(window.innerWidth - 310, screenPosition?.x ?? 24));
+  const baseTop = Math.max(82, Math.min(window.innerHeight - 380, screenPosition?.y ?? 96));
+
+  const left = customPos ? customPos.x : baseLeft;
+  const top = customPos ? customPos.y : baseTop;
+
+  if (selectedAgent && typeof selectedAgent === 'object') {
+    const startHeaderDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+      if ((e.target as HTMLElement).closest('button')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      dragRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        originX: left,
+        originY: top
+      };
+      const onMove = (ev: PointerEvent) => {
+        if (!dragRef.current) return;
+        const nx = Math.max(8, Math.min(window.innerWidth - 290, dragRef.current.originX + (ev.clientX - dragRef.current.startX)));
+        const ny = Math.max(54, Math.min(window.innerHeight - 100, dragRef.current.originY + (ev.clientY - dragRef.current.startY)));
+        setCustomPos({ x: nx, y: ny });
+      };
+      const onUp = () => {
+        dragRef.current = null;
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    };
+
+    const CHARACTER_INTERACT_GESTURES: { value: ScheduledActivityGesture; label: string }[] = [
+      { value: 'idle_observe', label: '👁️ Stand & Observe (Idle)' },
+      { value: 'sit_chair', label: '🪑 Sit in Chair (Shared Rig)' },
+      { value: 'open_door', label: '🚪 Open Door (Shared Rig)' },
+      { value: 'press_button', label: '👆 Press Button / Reach & Touch' },
+      { value: 'pickup_item', label: '📦 Place / Pickup Item' },
+      { value: 'lay_bed', label: '🛏️ Lay in Bed (Shared Rig)' },
+      { value: 'crawl', label: '🐾 Crawl Low (Shared Rig)' },
+      { value: 'run', label: '🏃 Run / Sprint (Shared Rig)' },
+      { value: 'parlor_social', label: '☕ Parlor Social / Converse' },
+      { value: 'wall_listen', label: '👂 Listen at Wall / Door' },
+      { value: 'inspect_ledger', label: '📖 Inspect Ledger / Notes' },
+      { value: 'pace_corridor', label: '🚶 Pace Corridor / Patrol' },
+      { value: 'sleepwalk_trance', label: '🌀 33Hz Sleepwalk Trance' }
+    ];
+
+    const EXPRESSIONS: FacialExpressionType[] = [
+      'neutral',
+      'suspicious',
+      'hollow_stare',
+      'side_eye_glare',
+      'paranoid_twitch',
+      'cryptic_whisper',
+      'weary',
+      'alarmed',
+      'smirk',
+      'grimace',
+      'shocked'
+    ];
+
+    return (
+      <div
+        data-testid="quick-edit-window-f"
+        style={{ left: `${left}px`, top: `${top}px` }}
+        className="fixed z-50 w-72 y2k-Aero-pod rounded-3xl p-2.5 text-xs text-slate-800 shadow-2xl border border-violet-300/90 select-none animate-in fade-in zoom-in-95 duration-150"
+      >
+        <div
+          onPointerDown={startHeaderDrag}
+          className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-2xl bg-gradient-to-r from-[#7c3aed] to-[#4f46e5] text-white cursor-grab active:cursor-grabbing"
+        >
+          <div className="flex items-center gap-1.5 truncate">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-300 shadow-xs shrink-0" />
+            <span className="font-extrabold tracking-tight truncate">
+              🧑 Character Quick Edit [F]
+            </span>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => setMinimized((m) => !m)}
+              className="w-5 h-5 rounded-full bg-white/25 hover:bg-white/40 flex items-center justify-center text-[10px] font-bold"
+              title={minimized ? 'Expand' : 'Minimize'}
+            >
+              {minimized ? '+' : '–'}
+            </button>
+            <button
+              type="button"
+              data-testid="close-character-quick-edit-btn"
+              onClick={() => {
+                onClearAgentSelection?.();
+                onClose();
+              }}
+              className="w-5 h-5 rounded-full bg-rose-500/80 hover:bg-rose-500 flex items-center justify-center text-[10px] font-bold"
+              title="Close Quick Edit [F]"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {!minimized && (
+          <div data-testid="quick-edit-character-panel" className="mt-2 space-y-2 px-1">
+            {/* Character Name & Room */}
+            <div className="bg-violet-50/90 border border-violet-200 rounded-2xl p-2 space-y-1.5">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-violet-900">
+                  Tenant / Rig Identity
+                </span>
+                <span className="text-[9px] font-mono bg-violet-200/80 text-violet-900 px-1.5 py-0.5 rounded-full font-bold">
+                  Room {selectedAgent.roomNumber || 'Lobby'} · {(selectedAgent.floor || 'lobby').toUpperCase()}
+                </span>
+              </div>
+              <input
+                type="text"
+                data-testid="quick-edit-agent-name-input"
+                value={selectedAgent.name}
+                onChange={(e) =>
+                  onUpdateAgent?.(
+                    { ...selectedAgent, name: e.target.value },
+                    `Renamed character to ${e.target.value}`
+                  )
+                }
+                className="w-full bg-white border border-violet-300 rounded-lg px-2 py-1 text-[11px] font-bold text-slate-900"
+              />
+              <div className="grid grid-cols-2 gap-1">
+                <div>
+                  <span className="text-[9px] text-slate-500 font-bold block">Occupation</span>
+                  <input
+                    type="text"
+                    data-testid="quick-edit-agent-occupation-input"
+                    value={selectedAgent.occupation}
+                    onChange={(e) =>
+                      onUpdateAgent?.({ ...selectedAgent, occupation: e.target.value })
+                    }
+                    className="w-full bg-white border border-slate-300 rounded-lg px-1.5 py-0.5 text-[10px] font-semibold text-slate-800"
+                  />
+                </div>
+                <div>
+                  <span className="text-[9px] text-slate-500 font-bold block">Room #</span>
+                  <input
+                    type="text"
+                    data-testid="quick-edit-agent-room-input"
+                    value={selectedAgent.roomNumber}
+                    onChange={(e) =>
+                      onUpdateAgent?.({ ...selectedAgent, roomNumber: e.target.value })
+                    }
+                    className="w-full bg-white border border-slate-300 rounded-lg px-1.5 py-0.5 text-[10px] font-semibold text-slate-800"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Shared Character Interact & Rig Animation Selector */}
+            <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-2 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-extrabold text-amber-950">
+                  🎬 Shared Rig Interact Animation
+                </span>
+                <span className="text-[9px] font-mono text-amber-800">All Rigs Shared</span>
+              </div>
+              <select
+                data-testid="quick-edit-agent-animation-select"
+                value={selectedAgent.activeInteractGesture || 'idle_observe'}
+                onChange={(e) => {
+                  const nextGesture = e.target.value as ScheduledActivityGesture;
+                  onUpdateAgent?.(
+                    {
+                      ...selectedAgent,
+                      activeInteractGesture: nextGesture
+                    },
+                    `${selectedAgent.name} animation → ${nextGesture}`
+                  );
+                }}
+                className="w-full bg-white border border-amber-300 rounded-lg px-2 py-1 text-[10px] font-bold text-slate-800"
+              >
+                {CHARACTER_INTERACT_GESTURES.map((g) => (
+                  <option key={g.value} value={g.value}>
+                    {g.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Trust, Suspicion & Spine Curvature Sliders */}
+            <div className="bg-white/90 border border-slate-200 rounded-2xl p-2 space-y-1.5">
+              <div>
+                <div className="flex justify-between text-[10px] font-bold">
+                  <span className="text-emerald-800">Trust Level</span>
+                  <span className="font-mono text-emerald-700">{selectedAgent.trustLevel}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  data-testid="quick-edit-agent-trust-slider"
+                  value={selectedAgent.trustLevel}
+                  onChange={(e) =>
+                    onUpdateAgent?.({
+                      ...selectedAgent,
+                      trustLevel: Number(e.target.value)
+                    })
+                  }
+                  className="w-full accent-emerald-600 h-1.5 cursor-pointer"
+                />
+              </div>
+
+              <div>
+                <div className="flex justify-between text-[10px] font-bold">
+                  <span className="text-rose-800">Suspicion Level</span>
+                  <span className="font-mono text-rose-700">{selectedAgent.suspicionLevel}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  data-testid="quick-edit-agent-suspicion-slider"
+                  value={selectedAgent.suspicionLevel}
+                  onChange={(e) =>
+                    onUpdateAgent?.({
+                      ...selectedAgent,
+                      suspicionLevel: Number(e.target.value)
+                    })
+                  }
+                  className="w-full accent-rose-600 h-1.5 cursor-pointer"
+                />
+              </div>
+
+              <div>
+                <div className="flex justify-between text-[10px] font-bold">
+                  <span className="text-slate-700">Expression &amp; Spine Stoop</span>
+                  <span className="font-mono text-slate-600">
+                    {selectedAgent.appearance?.spineCurvatureDeg ?? 10}°
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-1 mt-0.5">
+                  <select
+                    data-testid="quick-edit-agent-expression-select"
+                    value={
+                      selectedAgent.activeFacialExpression ||
+                      selectedAgent.appearance?.facialExpression ||
+                      'neutral'
+                    }
+                    onChange={(e) => {
+                      const nextExp = e.target.value as FacialExpressionType;
+                      onUpdateAgent?.({
+                        ...selectedAgent,
+                        activeFacialExpression: nextExp,
+                        appearance: {
+                          ...selectedAgent.appearance,
+                          facialExpression: nextExp
+                        }
+                      });
+                    }}
+                    className="bg-slate-50 border border-slate-300 rounded-lg px-1.5 py-0.5 text-[10px] font-bold text-slate-800"
+                  >
+                    {EXPRESSIONS.map((exp) => (
+                      <option key={exp} value={exp}>
+                        {exp}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="range"
+                    min={0}
+                    max={45}
+                    value={selectedAgent.appearance?.spineCurvatureDeg ?? 10}
+                    onChange={(e) =>
+                      onUpdateAgent?.({
+                        ...selectedAgent,
+                        appearance: {
+                          ...selectedAgent.appearance,
+                          spineCurvatureDeg: Number(e.target.value)
+                        }
+                      })
+                    }
+                    className="w-full accent-violet-600 h-1.5 self-center cursor-pointer"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-1.5 pt-0.5">
+              {onOpenCharacterCreator && (
+                <button
+                  type="button"
+                  data-testid="quick-edit-open-character-creator-btn"
+                  onClick={() => onOpenCharacterCreator(selectedAgent)}
+                  className="flex-1 py-1.5 px-2.5 rounded-full bg-gradient-to-r from-[#7c3aed] to-[#6d28d9] hover:from-[#6d28d9] hover:to-[#5b21b6] text-white text-[10px] font-extrabold shadow-xs"
+                >
+                  🧬 Open Full Character Studio
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  onClearAgentSelection?.();
+                  onClose();
+                }}
+                className="py-1.5 px-2.5 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-800 text-[10px] font-bold"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   if (!primaryAsset || typeof primaryAsset !== 'object') {
     return null;
@@ -111,12 +436,6 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
           Number(primaryAsset.dimensions[2]) || 1
         ]
       : [1, 1, 1];
-
-  const baseLeft = Math.max(16, Math.min(window.innerWidth - 310, screenPosition?.x ?? 24));
-  const baseTop = Math.max(82, Math.min(window.innerHeight - 380, screenPosition?.y ?? 96));
-
-  const left = customPos ? customPos.x : baseLeft;
-  const top = customPos ? customPos.y : baseTop;
 
   const activeConditionVariant = safeExecuteCatalogOrVariantCallback(
     () => resolveAssetConditionVariant(primaryAsset),
@@ -654,6 +973,102 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
             >
               Duplicate
             </button>
+            {isInvisibleTriggerAsset(primaryAsset) && onUpdateAsset && (
+              <div
+                data-testid="quick-edit-invisible-trigger-section"
+                className="col-span-2 bg-cyan-950/90 border border-cyan-400/70 rounded-2xl p-2 text-cyan-50 space-y-1.5"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-cyan-300">
+                    👻 Invisible In-Game Event Trigger
+                  </span>
+                  <label className="flex items-center gap-1 text-[9px] font-bold text-cyan-200 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(primaryAsset.triggerOnce)}
+                      onChange={(e) =>
+                        onUpdateAsset(
+                          {
+                            ...primaryAsset,
+                            triggerOnce: e.target.checked,
+                            hasTriggered: false
+                          },
+                          `Trigger Once set to ${e.target.checked}`
+                        )
+                      }
+                    />
+                    <span>Once Only</span>
+                  </label>
+                </div>
+                <div className="grid grid-cols-2 gap-1">
+                  <div>
+                    <span className="text-[9px] text-cyan-300 font-bold block">Event Type</span>
+                    <select
+                      data-testid="quick-edit-trigger-event-type-select"
+                      value={primaryAsset.triggerEventType || 'sound_ambience'}
+                      onChange={(e) =>
+                        onUpdateAsset(
+                          {
+                            ...primaryAsset,
+                            isInvisibleTrigger: true,
+                            triggerEventType: e.target.value as InvisibleTriggerEventType
+                          },
+                          `Trigger event type → ${e.target.value}`
+                        )
+                      }
+                      className="w-full bg-slate-900 border border-cyan-500/60 rounded-lg px-1.5 py-0.5 text-[10px] font-bold text-cyan-100"
+                    >
+                      <option value="sound_ambience">🔊 Sound / Ambience</option>
+                      <option value="sanity_shock">🧠 Sanity Shock (-8%)</option>
+                      <option value="open_secret_passage">🚪 Open Secret Passage</option>
+                      <option value="lights_flicker">💡 Flicker Floor Lights</option>
+                      <option value="npc_anomaly">👁️ Tenant Anomaly Spike</option>
+                      <option value="clue_reveal">🔍 Reveal Hidden Clue</option>
+                    </select>
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-cyan-300 font-bold block">
+                      Radius ({Number(primaryAsset.triggerRadius || 2.0).toFixed(1)}m)
+                    </span>
+                    <input
+                      type="range"
+                      min={1}
+                      max={6}
+                      step={0.5}
+                      data-testid="quick-edit-trigger-radius-slider"
+                      value={Number(primaryAsset.triggerRadius || 2.0)}
+                      onChange={(e) =>
+                        onUpdateAsset({
+                          ...primaryAsset,
+                          isInvisibleTrigger: true,
+                          triggerRadius: Number(e.target.value)
+                        })
+                      }
+                      className="w-full accent-cyan-400 h-1.5 mt-1.5 cursor-pointer"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <span className="text-[9px] text-cyan-300 font-bold block">
+                    In-Game Event Banner / Payload Message
+                  </span>
+                  <input
+                    type="text"
+                    data-testid="quick-edit-trigger-payload-input"
+                    value={primaryAsset.triggerPayload || ''}
+                    placeholder="Custom event message when player steps here..."
+                    onChange={(e) =>
+                      onUpdateAsset({
+                        ...primaryAsset,
+                        isInvisibleTrigger: true,
+                        triggerPayload: e.target.value
+                      })
+                    }
+                    className="w-full bg-slate-900 border border-cyan-500/60 rounded-lg px-2 py-0.5 text-[10px] font-semibold text-white"
+                  />
+                </div>
+              </div>
+            )}
             <button
               type="button"
               onClick={() =>

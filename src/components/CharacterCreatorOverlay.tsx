@@ -126,6 +126,13 @@ const SCHEDULE_LOCATIONS = [
 ];
 
 const ACTIVITY_GESTURES: { value: ScheduledActivityGesture; label: string }[] = [
+  { value: 'sit_chair', label: '🪑 Sit in Chair (Shared Rig)' },
+  { value: 'open_door', label: '🚪 Open Door (Shared Rig)' },
+  { value: 'press_button', label: '👆 Press Button / Reach & Touch (Shared Rig)' },
+  { value: 'pickup_item', label: '📦 Place / Pickup Item (Shared Rig)' },
+  { value: 'lay_bed', label: '🛏️ Lay in Bed (Shared Rig)' },
+  { value: 'crawl', label: '🐾 Crawl Low (Shared Rig)' },
+  { value: 'run', label: '🏃 Run / Sprint (Shared Rig)' },
   { value: 'parlor_social', label: '☕ Parlor Social / Converse' },
   { value: 'wall_listen', label: '👂 Listen at Wall / Door' },
   { value: 'inspect_ledger', label: '📖 Inspect Ledger / Notes' },

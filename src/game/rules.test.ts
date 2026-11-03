@@ -3710,4 +3710,235 @@ test('Subtest 50: Room High-Suspicion Detection & Hotel Ambience Audio Triggerin
   assert.equal(res201.triggeringAgents[0].name, 'Silas Thorne');
 });
 
+test('Shared Character Interact Animations, Batch Condition Variant Swap, Invisible Event Triggers, and Batch Asset File Parser', async () => {
+  const {
+    batchSwapAssetsConditionVariant,
+    resolveAssetInteractionAnimationGesture,
+    computeSkeletonPose,
+    isInvisibleTriggerAsset,
+    evaluateInvisibleTriggersAtPosition,
+    parseAssetDescriptionsFile,
+    getArchetypeDefaults,
+    APARTMENT_BUILDING_CATALOG_BLUEPRINTS
+  } = await import('./rules');
+
+  // 1. Test Shared Character Interact Animations across distinct character rigs
+  const matronAppearance = getArchetypeDefaults('Elderly Matron').appearance;
+  const clerkAppearance = getArchetypeDefaults('Detective Clerk').appearance;
+
+  const sharedGestures = [
+    'sit_chair',
+    'open_door',
+    'press_button',
+    'pickup_item',
+    'lay_bed',
+    'crawl',
+    'run'
+  ] as const;
+
+  for (const gesture of sharedGestures) {
+    const poseMatron = computeSkeletonPose(
+      0.5,
+      gesture === 'run' || gesture === 'crawl',
+      0,
+      false,
+      false,
+      gesture
+    );
+    const poseClerk = computeSkeletonPose(
+      0.5,
+      gesture === 'run' || gesture === 'crawl',
+      0,
+      false,
+      false,
+      gesture
+    );
+
+    // Verify all characters share the exact same rig movements for interact gestures
+    assert.equal(poseMatron.leftThighX, poseClerk.leftThighX, `Shared leftThighX for ${gesture}`);
+    assert.equal(poseMatron.rightUpperArmX, poseClerk.rightUpperArmX, `Shared rightUpperArmX for ${gesture}`);
+  }
+
+  // Specific pose assertions
+  const sitPose = computeSkeletonPose(0, false, 0, false, false, 'sit_chair');
+  assert.equal(sitPose.pelvisY < 0.7, true, 'Sit in chair lowers pelvisY');
+  assert.equal(sitPose.leftThighX > 1.2, true, 'Sit in chair bends thighs 90 deg');
+
+  const layPose = computeSkeletonPose(0, false, 0, false, false, 'lay_bed');
+  assert.equal(layPose.pelvisY < 0.7, true, 'Lay in bed lowers pelvisY');
+  assert.equal(layPose.spineLumbarX > 1.2, true, 'Lay in bed reclines spineLumbarX');
+
+  const buttonPose = computeSkeletonPose(0.5, false, 0, false, false, 'press_button');
+  assert.equal(buttonPose.rightUpperArmX > 1.0, true, 'Press button reaches right arm forward');
+
+  // 2. Test resolveAssetInteractionAnimationGesture mapping for specific assets
+  const chairAsset: PlacedAsset = {
+    id: 'test_chair',
+    name: '70s Velvet Parlor Armchair',
+    category: 'furniture',
+    subType: 'velvet_armchair',
+    floor: 'lobby',
+    position: [0, 0, 0],
+    dimensions: [0.9, 0.95, 0.9],
+    rotationY: 0,
+    color: '#4a181b',
+    textureId: 'velvet_crimson',
+    collidable: true
+  };
+  assert.equal(resolveAssetInteractionAnimationGesture(chairAsset), 'sit_chair');
+
+  const doorAsset: PlacedAsset = {
+    ...chairAsset,
+    id: 'test_door',
+    name: 'Corridor Room Door',
+    category: 'door',
+    subType: 'hotel_room_door'
+  };
+  assert.equal(resolveAssetInteractionAnimationGesture(doorAsset), 'open_door');
+
+  const tvAsset: PlacedAsset = {
+    ...chairAsset,
+    id: 'test_tv',
+    name: 'Zenith Console TV',
+    category: 'furniture',
+    subType: 'apt_lr_television_pristine'
+  };
+  assert.equal(resolveAssetInteractionAnimationGesture(tvAsset), 'press_button');
+
+  const bedAsset: PlacedAsset = {
+    ...chairAsset,
+    id: 'test_bed',
+    name: 'Tenement Brass Bed Frame',
+    category: 'furniture',
+    subType: 'apt_bed_frame_pristine'
+  };
+  assert.equal(resolveAssetInteractionAnimationGesture(bedAsset), 'lay_bed');
+
+  const notebookAsset: PlacedAsset = {
+    ...chairAsset,
+    id: 'test_notebook',
+    name: 'Investigator Evidence Notebook',
+    category: 'clue',
+    subType: 'investigator_notebook_prop'
+  };
+  assert.equal(resolveAssetInteractionAnimationGesture(notebookAsset), 'pickup_item');
+
+  // 3. Test batchSwapAssetsConditionVariant (single atomic batch update across multiple selected assets)
+  const sofaBp = APARTMENT_BUILDING_CATALOG_BLUEPRINTS.find((b) => b.subType === 'apt_lr_sofa_pristine')!;
+  const tvBp = APARTMENT_BUILDING_CATALOG_BLUEPRINTS.find((b) => b.subType === 'apt_lr_television_pristine')!;
+  const batchInputAssets: PlacedAsset[] = [
+    {
+      id: 'batch_sofa_1',
+      name: sofaBp.name,
+      category: sofaBp.category,
+      subType: sofaBp.subType,
+      floor: 'floor1',
+      position: [0, 0.45, 0],
+      dimensions: [...sofaBp.defaultDimensions] as [number, number, number],
+      rotationY: 0,
+      color: sofaBp.defaultColor,
+      textureId: sofaBp.defaultTexture,
+      collidable: true,
+      conditionVariant: 'pristine',
+      pairedVariantId: sofaBp.pairedVariantId
+    },
+    {
+      id: 'batch_tv_2',
+      name: tvBp.name,
+      category: tvBp.category,
+      subType: tvBp.subType,
+      floor: 'floor1',
+      position: [2, 0.45, 0],
+      dimensions: [...tvBp.defaultDimensions] as [number, number, number],
+      rotationY: 0,
+      color: tvBp.defaultColor,
+      textureId: tvBp.defaultTexture,
+      collidable: true,
+      conditionVariant: 'pristine',
+      pairedVariantId: tvBp.pairedVariantId
+    },
+    {
+      id: 'unselected_chair_3',
+      ...chairAsset,
+      floor: 'floor1',
+      conditionVariant: 'pristine'
+    }
+  ];
+
+  const batchOut = batchSwapAssetsConditionVariant(
+    batchInputAssets,
+    ['batch_sofa_1', 'batch_tv_2'],
+    'unkempt',
+    APARTMENT_BUILDING_CATALOG_BLUEPRINTS
+  );
+  assert.equal(batchOut.swappedAssets.length, 2);
+  assert.equal(batchOut.updatedAssets.length, 3);
+  assert.equal(batchOut.updatedAssets[0].conditionVariant, 'unkempt');
+  assert.equal(batchOut.updatedAssets[1].conditionVariant, 'unkempt');
+  // Unselected asset reference is untouched
+  assert.equal(batchOut.updatedAssets[2], batchInputAssets[2]);
+
+  // 4. Test Invisible In-Game Event Triggers
+  const secretWall: PlacedAsset = {
+    id: 'secret_wall_1',
+    name: 'Sliding Bookcase Secret Passage',
+    category: 'secret_wall',
+    subType: 'bookcase_passage',
+    floor: 'floor1',
+    position: [4, 1.3, 0],
+    dimensions: [1.4, 2.6, 0.45],
+    rotationY: 0,
+    color: '#3b2314',
+    textureId: 'oak_parquet',
+    collidable: true,
+    isSecretPassage: true,
+    isOpen: false
+  };
+  const invTrigger: PlacedAsset = {
+    id: 'trig_1',
+    name: 'Corridor Secret Passage Trigger',
+    category: 'clue',
+    subType: 'invisible_event_trigger',
+    floor: 'floor1',
+    position: [2, 1.1, 0],
+    dimensions: [1.8, 2.2, 1.8],
+    rotationY: 0,
+    color: '#06b6d4',
+    textureId: 'industrial_concrete',
+    collidable: false,
+    isInvisibleTrigger: true,
+    triggerEventType: 'open_secret_passage',
+    triggerRadius: 2.0,
+    triggerOnce: true,
+    triggerPayload: 'Hidden pressure plate clicked — Secret Passage opened!'
+  };
+
+  assert.equal(isInvisibleTriggerAsset(invTrigger), true);
+  assert.equal(isInvisibleTriggerAsset(secretWall), false);
+
+  // Player far away -> should not fire
+  const farEval = evaluateInvisibleTriggersAtPosition([10, 0, 10], 'floor1', [secretWall, invTrigger]);
+  assert.equal(farEval.firedTriggers.length, 0);
+
+  // Player steps inside trigger radius -> fires and opens secret wall
+  const nearEval = evaluateInvisibleTriggersAtPosition([2.2, 0, 0.2], 'floor1', [secretWall, invTrigger]);
+  assert.equal(nearEval.firedTriggers.length, 1);
+  assert.equal(nearEval.triggeredEvents[0].message, 'Hidden pressure plate clicked — Secret Passage opened!');
+  const updatedSecretWall = nearEval.updatedAssets.find((a) => a.id === 'secret_wall_1')!;
+  assert.equal(updatedSecretWall.isOpen, true);
+
+  // Trigger has triggerOnce=true and hasTriggered=true now -> stepping again does not re-fire
+  const repeatEval = evaluateInvisibleTriggersAtPosition([2.2, 0, 0.2], 'floor1', nearEval.updatedAssets);
+  assert.equal(repeatEval.firedTriggers.length, 0);
+
+  // 5. Test Batch Asset Description Parser for LocalDiskFoldersWindow
+  const parsedQueue = parseAssetDescriptionsFile(
+    ` Brass Hotel Key Rack | furniture | 0.8x1.1x0.15 | #5e4c2e | aged_brass | Tarnished brass wall rack for room keys \nFlickering Exit Sign | lighting | 0.6x0.3x0.12 | #7f1d1d | aged_brass | Cracked red glass exit sign`
+  );
+  assert.equal(parsedQueue.length, 2);
+  assert.equal(parsedQueue[0].name, 'Brass Hotel Key Rack');
+  assert.equal(parsedQueue[1].categoryHint, 'lighting');
+});
+
+
 

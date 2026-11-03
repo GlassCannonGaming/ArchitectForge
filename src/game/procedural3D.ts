@@ -12,7 +12,8 @@ import {
   computeAssetHingeAnimationState,
   SkeletonPoseEuler,
   FacialRigParams,
-  computeFacialRigParams
+  computeFacialRigParams,
+  isInvisibleTriggerAsset
 } from './rules';
 
 const textureCache = new Map<string, { map: THREE.CanvasTexture; bumpMap: THREE.CanvasTexture }>();
@@ -241,13 +242,16 @@ export function buildAssetMeshGroup(
   const interactionState = computeAssetInteractionVisualState(asset);
   const unkemptAged = isUnkemptOrAgedAsset(asset);
 
+  const isTrigger = isInvisibleTriggerAsset(rawAsset);
+
   const group = new THREE.Group();
   group.userData = {
     assetId: asset.id,
     asset,
     conditionVariant,
     isUnkemptOrAged: unkemptAged,
-    interactionState
+    interactionState,
+    isInvisibleTrigger: isTrigger
   };
 
   const [w, h, d] = asset.dimensions;
@@ -364,6 +368,36 @@ export function buildAssetMeshGroup(
       mesh.receiveShadow = true;
       group.add(mesh);
     });
+  } else if (isTrigger) {
+    // Invisible Event Trigger Volume (Visible in Build Mode as translucent cyan wireframe + beacon, invisible in Walk Mode)
+    const volMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(asset.color || '#06b6d4'),
+      transparent: true,
+      opacity: isSelected ? 0.28 : 0.16,
+      depthWrite: false
+    });
+    const volMesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), volMat);
+    const wireMat = new THREE.MeshBasicMaterial({
+      color: isSelected ? 0xf59e0b : 0x06b6d4,
+      wireframe: true
+    });
+    const wireMesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wireMat);
+    const floorRing = new THREE.Mesh(
+      new THREE.RingGeometry(Math.min(w, d) * 0.28, Math.min(w, d) * 0.45, 24),
+      new THREE.MeshBasicMaterial({
+        color: 0x06b6d4,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.75
+      })
+    );
+    floorRing.rotation.x = -Math.PI / 2;
+    floorRing.position.y = -h / 2 + 0.03;
+    const coreDiamond = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.24, 0),
+      new THREE.MeshBasicMaterial({ color: 0x22d3ee })
+    );
+    group.add(volMesh, wireMesh, floorRing, coreDiamond);
   } else if (asset.category === 'wall' || asset.category === 'window_wall') {
     // 1. Main wall body
     const bodyGeo = new THREE.BoxGeometry(w, h * 0.88, d);

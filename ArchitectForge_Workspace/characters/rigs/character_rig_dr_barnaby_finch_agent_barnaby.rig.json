@@ -1,0 +1,145 @@
+{
+  "schemaVersion": "2.0.0",
+  "savedAt": "2026-11-03T15:44:54.134Z",
+  "category": "character_rigs",
+  "folderPath": "ArchitectForge_Workspace/characters/rigs",
+  "itemName": "Dr. Barnaby Finch",
+  "data": {
+    "id": "agent_barnaby",
+    "name": "Dr. Barnaby Finch",
+    "role": "tenant",
+    "roomNumber": "Room 104",
+    "floor": "lobby",
+    "position": [
+      -3.2,
+      0,
+      2.6
+    ],
+    "status": "present",
+    "occupation": "Insomniac Watchmaker (27-Yr Resident, Rm 104)",
+    "personality": "Fidgety, meticulous permanent resident who has repaired watches in Suite 104 for nearly three decades; complains about the buzz of piecemeal conduit wiring.",
+    "voiceStyle": "Oxford-Inflected Antiquarian accent · Reverent, ink-stained, conspiratorial academic bass",
+    "voiceProfile": {
+      "prebuiltVoiceName": "Fenrir",
+      "vocalTone": "Reverent, ink-stained, conspiratorial academic bass",
+      "accent": "Oxford-Inflected Antiquarian",
+      "cadenceStyle": "Rhythmic, scholarly cadence that drops to a whisper on occult masonry",
+      "pitchMultiplier": 0.84,
+      "speakingRate": 0.9,
+      "baselineExpression": "paranoid_twitch",
+      "persistAcrossPlaythrough": true
+    },
+    "activeFacialExpression": "paranoid_twitch",
+    "secretTruth": "When installers drilled surface conduits for the late-70s hallway upgrades, he measured Floor 1 and proved the interior suites are 4 feet narrower than the exterior brick facade—hiding secret corridors.",
+    "knownFacts": [
+      "Has lived in Suite 104 for 27 years, brewing tea on a harvest-gold hotplate kitchenette while mapping every renovation patch in the building.",
+      "Measured a 4-foot structural cavity between Room 103 and Room 104 that management deliberately routed the electrical conduits around."
+    ],
+    "memories": [
+      "Left his brass calipers near the south wall of Floor 1.",
+      "Warned 25-year resident Julian in Room 202 not to listen to the microcassette player after midnight."
+    ],
+    "suspicionLevel": 15,
+    "trustLevel": 70,
+    "appearance": {
+      "archetype": "Detective Clerk",
+      "headShape": "proportional_human",
+      "bodyProportionStyle": "proportional_human",
+      "skinColor": "#d4bda8",
+      "eyeStyle": "button_dark",
+      "hairStyle": "messy_curls",
+      "hairColor": "#78716c",
+      "outfitColor": "#2d3b36",
+      "accentColor": "#6e562f",
+      "mouthStyle": "nervous_frown",
+      "facialExpression": "paranoid_twitch",
+      "spineCurvature": 0,
+      "hasWalkingCane": false,
+      "hasSpectacles": true,
+      "heightScale": 0.96,
+      "widthScale": 1,
+      "headScale": 1,
+      "voiceProfile": {
+        "prebuiltVoiceName": "Fenrir",
+        "vocalTone": "Reverent, ink-stained, conspiratorial academic bass",
+        "accent": "Oxford-Inflected Antiquarian",
+        "cadenceStyle": "Rhythmic, scholarly cadence that drops to a whisper on occult masonry",
+        "pitchMultiplier": 0.84,
+        "speakingRate": 0.9,
+        "baselineExpression": "paranoid_twitch",
+        "persistAcrossPlaythrough": true
+      }
+    },
+    "stats": {
+      "physic": 2,
+      "agility": 4,
+      "mind": 5,
+      "endurance": 2,
+      "pointsRemaining": 0
+    },
+    "assignedTraits": [
+      "hollow_knock",
+      "iron_nerve"
+    ],
+    "dailySchedule": [
+      {
+        "timeRange": "06:00–11:59",
+        "phase": "Morning",
+        "location": "Room 104 Workbench (Floor 1)",
+        "action": "Calibrates pocket chronometers and logs mains frequency fluctuations in Room 104.",
+        "targetFloor": "floor1",
+        "targetPosition": [
+          4.5,
+          0,
+          4.2
+        ],
+        "activityGesture": "inspect_ledger",
+        "randomEventsEnabled": true
+      },
+      {
+        "timeRange": "12:00–16:59",
+        "phase": "Afternoon",
+        "location": "Floor 1 Corridor",
+        "action": "Measures the exterior vs. interior wall depth along the Floor 1 hallway with brass calipers.",
+        "targetFloor": "floor1",
+        "targetPosition": [
+          1.8,
+          0,
+          1.5
+        ],
+        "activityGesture": "wall_listen",
+        "randomEventsEnabled": true
+      },
+      {
+        "timeRange": "17:00–21:59",
+        "phase": "Evening",
+        "location": "Lobby West Parlor (Social Hour)",
+        "action": "Paces nervously near the Lobby vending machine and parlor armchairs during social hour.",
+        "targetFloor": "lobby",
+        "targetPosition": [
+          -3.2,
+          0,
+          2.6
+        ],
+        "activityGesture": "parlor_social",
+        "randomEventsEnabled": true,
+        "activeRandomEvent": null
+      },
+      {
+        "timeRange": "22:00–05:59",
+        "phase": "Late Night",
+        "location": "Suite 104 (Floor 1)",
+        "action": "Stands awake in Room 104 timing the 33 Hz boiler hum against his master tuning fork.",
+        "targetFloor": "floor1",
+        "targetPosition": [
+          4.5,
+          0,
+          4.2
+        ],
+        "activityGesture": "pace_corridor",
+        "randomEventsEnabled": true
+      }
+    ],
+    "activeInteractGesture": "sit_chair"
+  }
+}

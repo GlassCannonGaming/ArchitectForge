@@ -1044,6 +1044,37 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
 
                 <button
                   type="button"
+                  data-testid="place-invisible-trigger-btn"
+                  onClick={() =>
+                    safeExecuteCatalogOrVariantCallback(
+                      () => {
+                        const triggerBp =
+                          catalogAssets.find(
+                            (b) => b && (b.subType === 'invisible_event_trigger' || b.isInvisibleTrigger)
+                          ) || null;
+                        onSelectBlueprint(triggerBp);
+                      },
+                      undefined,
+                      'Tools.invisibleTriggerTool'
+                    )
+                  }
+                  className={`w-full px-3 py-1 rounded-full text-xs font-bold text-left flex items-center justify-between transition-all ${
+                    activeBlueprint?.subType === 'invisible_event_trigger' || activeBlueprint?.isInvisibleTrigger
+                      ? 'bg-cyan-600 text-white shadow-xs ring-2 ring-cyan-300'
+                      : 'bg-cyan-50 hover:bg-cyan-100 text-cyan-950 border border-cyan-300'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <span>👻</span>
+                    <span>Invisible Event Trigger Volume</span>
+                  </span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 bg-white/50 text-cyan-950 font-bold rounded-md">
+                    Trigger
+                  </span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={onUndo}
                   disabled={undoCount === 0}
                   title={

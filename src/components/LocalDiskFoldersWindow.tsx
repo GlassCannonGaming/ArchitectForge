@@ -9,7 +9,8 @@ import {
   buildLocalSetupScripts,
   DEFAULT_ASSET_DESCRIPTIONS_IMPORT_FILE_CONTENT,
   ASSET_IMPORT_AGENT_INSTRUCTION_SET,
-  AI_MODEL_REGISTRY
+  AI_MODEL_REGISTRY,
+  parseAssetDescriptionsFile
 } from '../game/rules';
 import { StudioWindowFrame } from './StudioWindowFrame';
 
@@ -136,12 +137,18 @@ export const LocalDiskFoldersWindow: React.FC<LocalDiskFoldersWindowProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  const parsedQueueEntries = React.useMemo(
+    () => parseAssetDescriptionsFile(descriptionFilename, descriptionContent),
+    [descriptionFilename, descriptionContent]
+  );
+
   const handleUploadDescriptionFileFromDisk = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = async () => {
       const text = String(reader.result || '');
+      setSelectedCategory('asset_descriptions');
       setDescriptionFilename(file.name);
       setDescriptionContent(text);
       if (onSaveDescriptionFile) {
@@ -379,11 +386,12 @@ export const LocalDiskFoldersWindow: React.FC<LocalDiskFoldersWindowProps> = ({
                     </button>
                     <button
                       type="button"
+                      data-testid="upload-asset-text-file-btn"
                       onClick={() => descriptionUploadInputRef.current?.click()}
                       className="px-2 py-0.5 rounded bg-stone-800 hover:bg-stone-700 border border-stone-600 text-amber-200 text-[10px] font-semibold"
                       title="Upload a .txt, .md, or .json file containing detailed image descriptions of assets from your computer"
                     >
-                      📂 Upload (.txt/.md/.json)
+                      📂 Upload Asset Text File (.txt/.md/.json)
                     </button>
                   </div>
                 </div>
@@ -406,9 +414,10 @@ export const LocalDiskFoldersWindow: React.FC<LocalDiskFoldersWindowProps> = ({
                 )}
 
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] text-stone-400 font-mono shrink-0">File in Folder:</span>
+                  <span className="text-[10px] text-stone-400 font-mono shrink-0">Uploaded File:</span>
                   <input
                     type="text"
+                    data-testid="batch-import-filename-input"
                     value={descriptionFilename}
                     onChange={(e) => setDescriptionFilename(e.target.value)}
                     className="flex-1 bg-stone-900 border border-stone-700 rounded px-2 py-0.5 text-[10px] font-mono text-amber-200"
@@ -416,6 +425,7 @@ export const LocalDiskFoldersWindow: React.FC<LocalDiskFoldersWindowProps> = ({
                   />
                   <button
                     type="button"
+                    data-testid="save-description-file-btn"
                     onClick={() =>
                       onSaveDescriptionFile &&
                       onSaveDescriptionFile(descriptionFilename, descriptionContent)
@@ -428,33 +438,97 @@ export const LocalDiskFoldersWindow: React.FC<LocalDiskFoldersWindowProps> = ({
 
                 <textarea
                   rows={4}
+                  data-testid="batch-import-textarea"
                   value={descriptionContent}
                   onChange={(e) => setDescriptionContent(e.target.value)}
                   className="w-full bg-stone-900/90 border border-stone-700 rounded p-1.5 text-[10px] font-mono text-stone-200 focus:outline-none focus:border-amber-400"
                   placeholder="Place detailed asset image descriptions here (separated by --- or ### Title: prompt)..."
                 />
 
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-[9px] text-stone-400">
-                    Drop any <code className="text-amber-300">.txt</code>,{' '}
-                    <code className="text-amber-300">.md</code>, or{' '}
-                    <code className="text-amber-300">.json</code> file into{' '}
-                    <code className="text-amber-300">assets/image_descriptions_import/</code>
-                  </span>
-                  <button
-                    type="button"
-                    data-testid="run-batch-description-import-btn"
-                    disabled={batchImportBusy}
-                    onClick={() =>
-                      onRunBatchDescriptionImport &&
-                      onRunBatchDescriptionImport(descriptionFilename, descriptionContent)
-                    }
-                    className="w-full px-3 py-1.5 rounded bg-gradient-to-r from-amber-500 to-emerald-600 hover:from-amber-600 hover:to-emerald-700 disabled:opacity-50 text-stone-950 font-extrabold text-[10px] shadow-sm transition text-center"
+                {/* Batch Import UI Tool: Live Parsed Hotel Item Queue & One-Click Gemini-to-Meshy.ai Queue Initiator */}
+                <div
+                  data-testid="batch-import-queue-tool"
+                  className="rounded border border-amber-500/40 bg-stone-900/95 p-2 space-y-1.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-extrabold text-amber-300 uppercase tracking-wider">
+                      📋 Parsed Hotel Items Queue ({parsedQueueEntries.length} Listed Items)
+                    </span>
+                    <span className="text-[9px] font-mono text-emerald-300">
+                      {batchImportBusy
+                        ? '⏳ Queue Running...'
+                        : lastBatchImportSummary.length > 0
+                          ? `✓ ${lastBatchImportSummary.length} Completed`
+                          : 'Ready to Queue'}
+                    </span>
+                  </div>
+
+                  <div
+                    data-testid="batch-import-parsed-queue-list"
+                    className="max-h-28 overflow-y-auto space-y-1 pr-0.5"
                   >
-                    {batchImportBusy
-                      ? '⏳ Generating Images (Flash-Lite) → Alpha-Matte → Meshy 3D → Importing...'
-                      : '⚡ Convert Descriptions → Images (Flash-Lite) → Alpha-Matte → Meshy 3D → Catalog'}
-                  </button>
+                    {parsedQueueEntries.length === 0 ? (
+                      <div className="text-[10px] text-stone-500 italic py-1">
+                        No hotel items found in text file. Upload a .txt/.md/.json file or add ### Item blocks above.
+                      </div>
+                    ) : (
+                      parsedQueueEntries.map((entry, idx) => {
+                        const importedMatch = lastBatchImportSummary.find(
+                          (s) => s.name.toLowerCase() === entry.name.toLowerCase()
+                        );
+                        return (
+                          <div
+                            key={entry.id || idx}
+                            data-testid={`batch-queue-item-${idx}`}
+                            className="flex items-center justify-between gap-2 px-2 py-1 rounded bg-stone-950/90 border border-stone-800 text-[10px]"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="font-bold text-stone-100 truncate">
+                                #{idx + 1} · {entry.name}
+                              </div>
+                              <div className="text-[9px] text-stone-400 font-mono truncate">
+                                Category: {entry.categoryHint} · Size: {entry.dimensionsHint.join('×')}m
+                              </div>
+                            </div>
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold shrink-0 ${
+                                batchImportBusy
+                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                  : importedMatch
+                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                    : 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                              }`}
+                            >
+                              {batchImportBusy
+                                ? '⏳ Queued → Meshy'
+                                : importedMatch
+                                  ? '✓ Imported 3D'
+                                  : 'Queued'}
+                            </span>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 pt-1">
+                    <button
+                      type="button"
+                      data-testid="run-batch-description-import-btn"
+                      disabled={batchImportBusy || parsedQueueEntries.length === 0}
+                      onClick={() =>
+                        onRunBatchDescriptionImport &&
+                        onRunBatchDescriptionImport(descriptionFilename, descriptionContent)
+                      }
+                      className="flex-1 px-3 py-1.5 rounded bg-gradient-to-r from-amber-500 to-emerald-600 hover:from-amber-600 hover:to-emerald-700 disabled:opacity-50 text-stone-950 font-extrabold text-[10px] shadow-sm transition text-center"
+                    >
+                      <span data-testid="initiate-gemini-meshy-queue-btn">
+                        {batchImportBusy
+                          ? `⏳ Running Gemini-to-Meshy.ai Queue (${parsedQueueEntries.length} Hotel Items)...`
+                          : `⚡ Initiate Gemini-to-Meshy.ai Generation Queue (${parsedQueueEntries.length} Hotel Items)`}
+                      </span>
+                    </button>
+                  </div>
                 </div>
 
                 {lastBatchImportSummary.length > 0 && (
