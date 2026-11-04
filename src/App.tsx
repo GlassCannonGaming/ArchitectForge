@@ -87,6 +87,7 @@ import {
   AssetConditionVariant,
   swapAssetConditionVariant,
   batchSwapAssetsConditionVariant,
+  applyGlobalRenovationTheme,
   swapAssetVisualDesign,
   toggleAssetInteractiveState,
   DEFAULT_SNAP_GRID_SIZE,
@@ -463,6 +464,24 @@ export default function App() {
     }
     return INITIAL_ROOM_BLUEPRINTS;
   });
+
+  const [recentRoomBlueprintIds, setRecentRoomBlueprintIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('architectforge_recent_room_bp_ids_v1');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return INITIAL_ROOM_BLUEPRINTS.slice(0, 3).map((bp) => bp.id);
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('architectforge_recent_room_bp_ids_v1', JSON.stringify(recentRoomBlueprintIds));
+    } catch {}
+  }, [recentRoomBlueprintIds]);
+
+  const touchRecentBlueprint = useCallback((id: string) => {
+    setRecentRoomBlueprintIds((prev) => [id, ...prev.filter((x) => x !== id)].slice(0, 5));
+  }, []);
 
   useEffect(() => {
     try {
@@ -1983,6 +2002,33 @@ export default function App() {
     ]
   );
 
+  // Switch ALL placed assets across the scene when selecting a Renovation theme ("78's Pristine", "70's Unkempt", or "90's Updated")
+  const handleApplyRenovationTheme = useCallback(
+    (targetTheme: AssetConditionVariant) => {
+      safeExecuteCatalogOrVariantCallback(
+        () => {
+          if (assets.length === 0) return;
+          const themeLabel =
+            targetTheme === 'updated'
+              ? "90's Updated"
+              : targetTheme === 'unkempt'
+              ? "70's Unkempt"
+              : "78's Pristine";
+          recordUndoSnapshot(`Apply Renovation Theme "${themeLabel}" (${assets.length} assets)`);
+          soundFX.playPlaceAsset();
+
+          const res = applyGlobalRenovationTheme(assets, targetTheme, catalogAssets);
+          setAssets(res.updatedAssets);
+          setStatusBanner(res.message);
+        },
+        undefined,
+        `App.handleApplyRenovationTheme(${targetTheme})`,
+        setStatusBanner
+      );
+    },
+    [assets, catalogAssets, recordUndoSnapshot]
+  );
+
   // Atomic visual design swapper (cycles or selects among Meshy.ai 3D visual design variants without stale closures)
   const handleSwapVisualDesign = useCallback(
     (targetSubType: string | 'next') => {
@@ -2352,24 +2398,26 @@ export default function App() {
       );
       const newBp = createRoomBlueprintFromAssets(name, description, sourceAssets, mergedTags);
       setRoomBlueprints((prev) => [newBp, ...prev]);
+      touchRecentBlueprint(newBp.id);
       saveItemToDedicatedFolder('blueprints', newBp.name, newBp, newBp.id);
       saveItemToDedicatedFolder('room_blueprints', newBp.name, newBp, newBp.id);
       setStatusBanner(
         `Saved Room Blueprint "${newBp.name}" (${newBp.items.length} objects, tags: ${newBp.tags.map((t) => `#${t}`).join(' ')}) to ./ArchitectForge_Workspace/blueprints/!`
       );
     },
-    [assets, selectedAssetIds, selectedAssetId, currentFloor, saveItemToDedicatedFolder]
+    [assets, selectedAssetIds, selectedAssetId, currentFloor, saveItemToDedicatedFolder, touchRecentBlueprint]
   );
 
   const handleUpdateRoomBlueprint = useCallback(
     (updated: RoomBlueprint) => {
       setRoomBlueprints((prev) => prev.map((bp) => (bp.id === updated.id ? updated : bp)));
+      touchRecentBlueprint(updated.id);
       saveItemToDedicatedFolder('blueprints', updated.name, updated, updated.id);
       setStatusBanner(
         `Updated Room Blueprint tags on "${updated.name}" (${(updated.tags || []).map((t) => `#${t}`).join(' ')}).`
       );
     },
-    [saveItemToDedicatedFolder]
+    [saveItemToDedicatedFolder, touchRecentBlueprint]
   );
 
   const handleUpdateCatalogBlueprint = useCallback(
@@ -2443,13 +2491,14 @@ export default function App() {
       setSelectedAssetIds(newIds);
       setSelectedAssetId(newIds.length > 0 ? newIds[newIds.length - 1] : null);
       setActiveBlueprint(null);
+      touchRecentBlueprint(blueprint.id);
       setStatusBanner(
         `Loaded Room Blueprint "${blueprint.name}" (${instantiated.length} objects) onto ${
           getFloorMeta(currentFloor, floorLayers).shortCode
         } at (${offsetX}m, ${offsetZ}m)!`
       );
     },
-    [currentFloor, floorLayers, recordUndoSnapshot]
+    [currentFloor, floorLayers, recordUndoSnapshot, touchRecentBlueprint]
   );
 
   const handleDeleteRoomBlueprint = useCallback((id: string) => {
@@ -3613,6 +3662,7 @@ export default function App() {
         isolateSelectedAsset={isolateSelectedAsset}
         showExteriorWalls={showExteriorWalls}
         customCharacterAppearance={customAppearance}
+        onChangeCharacterAppearance={setCustomAppearance}
         onSelectAsset={handleSelectAsset}
         onMarqueeSelectAssets={handleMarqueeSelectAssets}
         onPlaceBlueprintAt={handlePlaceBlueprintAt}
@@ -4226,8 +4276,10 @@ export default function App() {
             );
           }}
           onSwapConditionVariant={handleSwapConditionVariant}
+          onApplyRenovationTheme={handleApplyRenovationTheme}
           onSwapVisualDesign={handleSwapVisualDesign}
-          roomBlueprints={roomBlueprints}
+           recentRoomBlueprintIds={recentRoomBlueprintIds}
+           roomBlueprints={roomBlueprints}
           onSaveRoomBlueprint={handleSaveRoomBlueprint}
           onUpdateRoomBlueprint={handleUpdateRoomBlueprint}
           onUpdateCatalogBlueprint={handleUpdateCatalogBlueprint}

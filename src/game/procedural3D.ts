@@ -14,7 +14,9 @@ import {
   FacialRigParams,
   computeFacialRigParams,
   computeNaturalCharacterAnatomySpec,
-  isInvisibleTriggerAsset
+  isInvisibleTriggerAsset,
+  CompositeSubPart,
+  APARTMENT_BUILDING_CATALOG_BLUEPRINTS
 } from './rules';
 
 const textureCache = new Map<string, { map: THREE.CanvasTexture; bumpMap: THREE.CanvasTexture }>();
@@ -168,6 +170,9 @@ export function getProceduralIrisTexture(
 }
 
 const SPECIALIZED_70S_SUBTYPES = new Set<string>([
+  'vintage_radiator',
+  'icebox_fridge',
+  'rotary_wall_phone',
   'crt_tv_vhs_combo',
   'soda_vending_machine',
   'concierge_crt_computer',
@@ -188,6 +193,158 @@ const SPECIALIZED_70S_SUBTYPES = new Set<string>([
   'evidence_corkboard_prop',
   'master_skeleton_keyring_prop'
 ]);
+
+const CATALOG_BLUEPRINT_BY_SUBTYPE = new Map(
+  APARTMENT_BUILDING_CATALOG_BLUEPRINTS.map((bp) => [bp.subType, bp])
+);
+
+export function resolveCatalogCompositeParts(
+  subType: string,
+  name: string,
+  explicitParts?: CompositeSubPart[]
+): CompositeSubPart[] | undefined {
+  if (explicitParts && explicitParts.length > 0) {
+    return explicitParts;
+  }
+  const catalogBp = CATALOG_BLUEPRINT_BY_SUBTYPE.get(subType);
+  if (catalogBp?.compositeParts && catalogBp.compositeParts.length > 0) {
+    return catalogBp.compositeParts;
+  }
+  if (SPECIALIZED_70S_SUBTYPES.has(subType)) {
+    return buildProcedural3DSpecFromPrompt(name || subType).parts;
+  }
+  return undefined;
+}
+
+export function getBlueprint3DPreviewParts(blueprint: {
+  subType: string;
+  name: string;
+  category: string;
+  defaultDimensions: [number, number, number];
+  defaultColor: string;
+  defaultTexture?: TexturePresetId;
+  isSecretPassage?: boolean;
+  isInvisibleTrigger?: boolean;
+  conditionVariant?: AssetConditionVariant;
+  compositeParts?: CompositeSubPart[];
+}): CompositeSubPart[] {
+  const resolved = resolveCatalogCompositeParts(
+    blueprint.subType || '',
+    blueprint.name || '',
+    blueprint.compositeParts
+  );
+  if (resolved && resolved.length > 0) {
+    return resolved;
+  }
+
+  const [w, h, d] =
+    Array.isArray(blueprint.defaultDimensions) && blueprint.defaultDimensions.length === 3
+      ? [
+          Number(blueprint.defaultDimensions[0]) || 1,
+          Number(blueprint.defaultDimensions[1]) || 1,
+          Number(blueprint.defaultDimensions[2]) || 1
+        ]
+      : [1, 1, 1];
+  const primaryColor = blueprint.defaultColor || '#8a8170';
+  const isUpdated = blueprint.conditionVariant === 'updated' || (blueprint.subType || '').endsWith('_90s');
+  const trimWoodColor = isUpdated ? '#1e242b' : '#26160c';
+  const brassAccentColor = isUpdated ? '#64748b' : '#6b5634';
+
+  if (blueprint.isInvisibleTrigger || blueprint.subType === 'invisible_event_trigger') {
+    return [
+      { id: 'trigger_floor_ring', shape: 'torus', offset: [0, 0.04, 0], size: [Math.min(w, d) * 0.36, 0.05, Math.min(w, d) * 0.36], rotation: [Math.PI / 2, 0, 0], color: '#06b6d4', roughness: 0.2, metalness: 0.4, emissive: '#0891b2' },
+      { id: 'trigger_core_diamond', shape: 'sphere', offset: [0, h * 0.5, 0], size: [0.28, 0.28, 0.28], color: '#22d3ee', roughness: 0.15, metalness: 0.3, emissive: '#06b6d4' },
+      { id: 'trigger_post_nw', shape: 'cylinder', offset: [-w * 0.45, h * 0.5, -d * 0.45], size: [0.03, h, 0.03], color: '#06b6d4', roughness: 0.3, metalness: 0.5 },
+      { id: 'trigger_post_ne', shape: 'cylinder', offset: [w * 0.45, h * 0.5, -d * 0.45], size: [0.03, h, 0.03], color: '#06b6d4', roughness: 0.3, metalness: 0.5 },
+      { id: 'trigger_post_sw', shape: 'cylinder', offset: [-w * 0.45, h * 0.5, d * 0.45], size: [0.03, h, 0.03], color: '#06b6d4', roughness: 0.3, metalness: 0.5 },
+      { id: 'trigger_post_se', shape: 'cylinder', offset: [w * 0.45, h * 0.5, d * 0.45], size: [0.03, h, 0.03], color: '#06b6d4', roughness: 0.3, metalness: 0.5 }
+    ];
+  }
+
+  if (blueprint.category === 'wall' || blueprint.category === 'window_wall') {
+    const parts: CompositeSubPart[] = [
+      { id: 'wall_body', shape: 'box', offset: [0, h * 0.5, 0], size: [w, h * 0.88, d], color: primaryColor, roughness: 0.82, metalness: 0.1 },
+      { id: 'baseboard_plinth', shape: 'box', offset: [0, h * 0.05, 0], size: [w + 0.04, h * 0.1, d + 0.05], color: trimWoodColor, roughness: 0.68, metalness: 0.12 },
+      { id: 'crown_cornice', shape: 'box', offset: [0, h * 0.965, 0], size: [w + 0.04, h * 0.07, d + 0.06], color: trimWoodColor, roughness: 0.68, metalness: 0.12 }
+    ];
+    if (blueprint.subType === 'interior_plaster_wall' || blueprint.defaultTexture === 'plaster_cream') {
+      parts.push({
+        id: 'wainscot_lower_band',
+        shape: 'box',
+        offset: [0, h * 0.22, 0.01],
+        size: [w + 0.01, h * 0.26, d + 0.02],
+        color: '#3b2314',
+        roughness: 0.72,
+        metalness: 0.1
+      });
+    }
+    if (blueprint.category === 'window_wall') {
+      parts.push(
+        { id: 'window_sill', shape: 'box', offset: [0, h * 0.30, 0], size: [w * 0.62, 0.08, d + 0.08], color: trimWoodColor, roughness: 0.65, metalness: 0.15 },
+        { id: 'casement_pane', shape: 'box', offset: [0, h * 0.56, 0.01], size: [w * 0.55, h * 0.48, d + 0.04], color: '#2b353b', roughness: 0.32, metalness: 0.45, emissive: '#4a351d' }
+      );
+    }
+    return parts;
+  }
+
+  if (blueprint.category === 'secret_wall' || blueprint.category === 'door' || blueprint.isSecretPassage) {
+    return [
+      { id: 'left_jamb', shape: 'box', offset: [-w * 0.46, h * 0.5, 0], size: [w * 0.08, h, d * 1.15], color: trimWoodColor, roughness: 0.68, metalness: 0.12 },
+      { id: 'right_jamb', shape: 'box', offset: [w * 0.46, h * 0.5, 0], size: [w * 0.08, h, d * 1.15], color: trimWoodColor, roughness: 0.68, metalness: 0.12 },
+      { id: 'door_panel', shape: 'box', offset: [0, h * 0.5, 0], size: [w * 0.92, h * 0.94, d * 0.75], color: primaryColor, roughness: 0.75, metalness: 0.1 },
+      { id: 'shelf_bottom', shape: 'box', offset: [0, h * 0.25, 0.02], size: [w * 0.84, 0.07, d * 0.95], color: trimWoodColor, roughness: 0.68, metalness: 0.12 },
+      { id: 'shelf_mid', shape: 'box', offset: [0, h * 0.50, 0.02], size: [w * 0.84, 0.07, d * 0.95], color: trimWoodColor, roughness: 0.68, metalness: 0.12 },
+      { id: 'shelf_top', shape: 'box', offset: [0, h * 0.75, 0.02], size: [w * 0.84, 0.07, d * 0.95], color: trimWoodColor, roughness: 0.68, metalness: 0.12 },
+      { id: 'brass_latch', shape: 'cylinder', offset: [-w * 0.32, h * 0.5, 0.04], size: [0.06, d + 0.12, 0.06], rotation: [Math.PI / 2, 0, 0], color: brassAccentColor, roughness: 0.38, metalness: 0.75 }
+    ];
+  }
+
+  if (blueprint.subType === 'four_poster_bed') {
+    return [
+      { id: 'bed_frame', shape: 'box', offset: [0, h * 0.18, 0], size: [w, h * 0.28, d], color: trimWoodColor, roughness: 0.68, metalness: 0.12 },
+      { id: 'mattress', shape: 'box', offset: [0, h * 0.38, 0], size: [w * 0.92, h * 0.24, d * 0.9], color: primaryColor, roughness: 0.82, metalness: 0.08 },
+      { id: 'pillow', shape: 'box', offset: [0, h * 0.55, -d * 0.32], size: [w * 0.75, h * 0.14, d * 0.22], color: '#968d7b', roughness: 0.9, metalness: 0.02 },
+      { id: 'headboard', shape: 'box', offset: [0, h * 0.56, -d * 0.46], size: [w, h * 0.85, 0.14], color: trimWoodColor, roughness: 0.68, metalness: 0.12 },
+      { id: 'post_nw', shape: 'cylinder', offset: [-w * 0.46, h * 0.5, -d * 0.46], size: [0.05, h, 0.05], color: brassAccentColor, roughness: 0.38, metalness: 0.75 },
+      { id: 'post_ne', shape: 'cylinder', offset: [w * 0.46, h * 0.5, -d * 0.46], size: [0.05, h, 0.05], color: brassAccentColor, roughness: 0.38, metalness: 0.75 },
+      { id: 'post_sw', shape: 'cylinder', offset: [-w * 0.46, h * 0.5, d * 0.46], size: [0.05, h, 0.05], color: brassAccentColor, roughness: 0.38, metalness: 0.75 },
+      { id: 'post_se', shape: 'cylinder', offset: [w * 0.46, h * 0.5, d * 0.46], size: [0.05, h, 0.05], color: brassAccentColor, roughness: 0.38, metalness: 0.75 }
+    ];
+  }
+
+  if (blueprint.subType === 'reception_desk') {
+    return [
+      { id: 'counter_hull', shape: 'box', offset: [0, h * 0.44, 0], size: [w, h * 0.88, d * 0.88], color: primaryColor, roughness: 0.78, metalness: 0.1 },
+      { id: 'top_slab', shape: 'box', offset: [0, h * 0.94, 0], size: [w + 0.12, h * 0.12, d + 0.1], color: trimWoodColor, roughness: 0.65, metalness: 0.12 },
+      { id: 'guest_ledger', shape: 'box', offset: [-0.35, h * 1.02, 0.1], size: [0.55, 0.08, 0.42], color: '#4a181b', roughness: 0.78, metalness: 0.1 },
+      { id: 'call_bell', shape: 'sphere', offset: [0.45, h * 1.04, 0.15], size: [0.11, 0.11, 0.11], color: brassAccentColor, roughness: 0.35, metalness: 0.8 }
+    ];
+  }
+
+  if (blueprint.category === 'lighting') {
+    return [
+      { id: 'desk_top', shape: 'box', offset: [0, h * 0.60, 0], size: [w, h * 0.12, d], color: trimWoodColor, roughness: 0.68, metalness: 0.12 },
+      { id: 'left_pedestal', shape: 'box', offset: [-w * 0.36, h * 0.32, 0], size: [w * 0.24, h * 0.65, d * 0.88], color: trimWoodColor, roughness: 0.68, metalness: 0.12 },
+      { id: 'right_pedestal', shape: 'box', offset: [w * 0.36, h * 0.32, 0], size: [w * 0.24, h * 0.65, d * 0.88], color: trimWoodColor, roughness: 0.68, metalness: 0.12 },
+      { id: 'lamp_stem', shape: 'cylinder', offset: [0, h * 0.82, -0.1], size: [0.06, 0.36, 0.06], color: brassAccentColor, roughness: 0.38, metalness: 0.75 },
+      { id: 'lamp_shade', shape: 'cone', offset: [0, h * 0.98, -0.1], size: [0.24, 0.18, 0.24], color: primaryColor, roughness: 0.35, metalness: 0.25, emissive: '#fde68a' }
+    ];
+  }
+
+  if (blueprint.category === 'floor_tile') {
+    const tileH = Math.max(0.05, h);
+    return [
+      { id: 'rug_border', shape: 'box', offset: [0, tileH * 0.3, 0], size: [w + 0.08, Math.max(0.03, tileH * 0.6), d + 0.08], color: brassAccentColor, roughness: 0.45, metalness: 0.65 },
+      { id: 'rug_surface', shape: 'box', offset: [0, tileH * 0.55, 0], size: [w, tileH, d], color: primaryColor, roughness: 0.88, metalness: 0.05 }
+    ];
+  }
+
+  return [
+    { id: 'hull', shape: 'box', offset: [0, h * 0.44, 0], size: [w * 0.92, h * 0.88, d * 0.9], color: primaryColor, roughness: 0.78, metalness: 0.12 },
+    { id: 'cap', shape: 'box', offset: [0, h * 0.94, 0], size: [w, h * 0.1, d], color: brassAccentColor, roughness: 0.38, metalness: 0.75 },
+    { id: 'dial', shape: 'cylinder', offset: [w * 0.28, h * 0.68, d * 0.46], size: [0.1, 0.08, 0.1], rotation: [Math.PI / 2, 0, 0], color: brassAccentColor, roughness: 0.38, metalness: 0.75 }
+  ];
+}
 
 export function getProceduralMaterialTextures(
   preset: TexturePresetId,
@@ -449,13 +606,12 @@ export function buildAssetMeshGroup(
     metalness: 0.75
   });
 
-  // Automatically synthesize multi-part 3D geometry for specialized late-70s/early-80s catalog fixtures
-  const resolvedCompositeParts =
-    asset.compositeParts && asset.compositeParts.length > 0
-      ? asset.compositeParts
-      : SPECIALIZED_70S_SUBTYPES.has(asset.subType)
-      ? buildProcedural3DSpecFromPrompt(asset.name || asset.subType).parts
-      : undefined;
+  // Automatically synthesize multi-part 3D geometry for specialized late-70s/early-80s and catalog fixtures
+  const resolvedCompositeParts = resolveCatalogCompositeParts(
+    asset.subType,
+    asset.name,
+    asset.compositeParts
+  );
 
   let hasDedicatedScreenPart = false;
 

@@ -288,6 +288,7 @@ export interface CharacterAppearance {
   meshyAnimations?: Partial<Record<ScheduledActivityGesture, MeshyCharacterAnimationClipSpec>>;
   googleAiAnimations?: Partial<Record<ScheduledActivityGesture, GoogleAiCharacterAnimationClipSpec>>;
   voiceProfile?: CharacterVoiceProfile;
+  cameraZoom?: number;
 }
 
 export interface CharacterStats {
@@ -1313,6 +1314,20 @@ export function buildProcedural3DSpecFromPrompt(prompt: string): {
     };
   }
 
+  if (lower.includes('flashlight') || lower.includes('d-cell') || lower.includes('torch') || lower.includes('uv light')) {
+    return {
+      name: '1970s Chrome D-Cell Inspection Flashlight',
+      category: 'lighting',
+      dimensions: [0.52, 0.18, 0.24],
+      parts: [
+        { id: 'ribbed_chrome_barrel', shape: 'cylinder', offset: [-0.04, 0.08, 0], size: [0.045, 0.36, 0.045], rotation: [0, 0, Math.PI / 2], color: '#78705e', roughness: 0.32, metalness: 0.82 },
+        { id: 'beveled_head_cone', shape: 'cone', offset: [0.16, 0.08, 0], size: [0.075, 0.12, 0.075], rotation: [0, 0, -Math.PI / 2], color: '#5e4c2e', roughness: 0.36, metalness: 0.78 },
+        { id: 'thumb_switch_slide', shape: 'box', offset: [0.02, 0.13, 0], size: [0.08, 0.025, 0.03], color: '#4a181b', roughness: 0.6, metalness: 0.4 },
+        { id: 'tungsten_uv_lens', shape: 'cylinder', offset: [0.22, 0.08, 0], size: [0.068, 0.02, 0.068], rotation: [0, 0, Math.PI / 2], color: '#855826', roughness: 0.2, metalness: 0.25, emissive: '#6e562f' }
+      ]
+    };
+  }
+
   if (lower.includes('chandelier') || lower.includes('lamp') || lower.includes('sconce') || lower.includes('light')) {
     return {
       name: 'Tarnished 70s Amber-Glass Floor Lamp',
@@ -1375,7 +1390,7 @@ export function buildProcedural3DSpecFromPrompt(prompt: string): {
     };
   }
 
-  if (lower.includes('sofa') || lower.includes('armchair') || lower.includes('chair') || lower.includes('couch') || lower.includes('teal') || lower.includes('avocado')) {
+  if (lower.includes('sofa') || lower.includes('armchair') || lower.includes('chair') || lower.includes('couch') || lower.includes('avocado')) {
     return {
       name: '70s Faded Avocado & Ochre Armchair',
       category: 'furniture',
@@ -1408,7 +1423,7 @@ export function buildProcedural3DSpecFromPrompt(prompt: string): {
     };
   }
 
-  if (lower.includes('sink') || lower.includes('vanity') || lower.includes('washbasin') || lower.includes('lavatory')) {
+  if (lower.includes('vanity') || lower.includes('washbasin') || lower.includes('lavatory') || (lower.includes('sink') && !lower.includes('skillet'))) {
     return {
       name: 'Cracked Formica & Ecru Vanity Sink',
       category: 'furniture',
@@ -1437,7 +1452,7 @@ export function buildProcedural3DSpecFromPrompt(prompt: string): {
     };
   }
 
-  if (lower.includes('painting') || lower.includes('art') || lower.includes('portrait') || lower.includes('picture') || lower.includes('canvas')) {
+  if (lower.includes('painting') || /\bart\b/.test(lower) || lower.includes('portrait') || lower.includes('picture') || lower.includes('canvas')) {
     return {
       name: 'Tarnished 70s Oil Portrait Frame',
       category: 'custom_ai',
@@ -1450,7 +1465,7 @@ export function buildProcedural3DSpecFromPrompt(prompt: string): {
     };
   }
 
-  if (lower.includes('plant') || lower.includes('palm') || lower.includes('fern') || lower.includes('pot') || lower.includes('vase')) {
+  if (lower.includes('plant') || lower.includes('palm') || lower.includes('fern') || lower.includes('pothos') || lower.includes('ficus') || lower.includes('vase')) {
     return {
       name: 'Neglected Parlor Boston Fern',
       category: 'custom_ai',
@@ -1464,7 +1479,7 @@ export function buildProcedural3DSpecFromPrompt(prompt: string): {
     };
   }
 
-  if (lower.includes('towel') || lower.includes('linen') || lower.includes('rack')) {
+  if (lower.includes('towel') || lower.includes('linen') || lower.includes('towel_rack')) {
     return {
       name: 'Corroded Brass Towel Rail & Faded Linens',
       category: 'furniture',
@@ -1478,7 +1493,7 @@ export function buildProcedural3DSpecFromPrompt(prompt: string): {
     };
   }
 
-  if (lower.includes('ac') || lower.includes('air conditioner') || lower.includes('conduit') || lower.includes('retrofit') || lower.includes('breaker')) {
+  if (/\bac\b/.test(lower) || lower.includes('air conditioner') || lower.includes('window_ac') || lower.includes('conduit') || lower.includes('retrofit') || lower.includes('breaker')) {
     return {
       name: '1979 Woodgrain Window AC & Conduit',
       category: 'appliance',
@@ -1553,16 +1568,50 @@ export function buildProcedural3DSpecFromPrompt(prompt: string): {
     };
   }
 
-  if (lower.includes('flashlight') || lower.includes('d-cell') || lower.includes('torch') || lower.includes('uv light')) {
+  if (lower.includes('payphone') || lower.includes('switchboard') || lower.includes('telephone') || lower.includes('rotary')) {
     return {
-      name: '1970s Chrome D-Cell Inspection Flashlight',
-      category: 'lighting',
-      dimensions: [0.52, 0.18, 0.24],
+      name: 'Late-70s Rotary Payphone & Switchboard',
+      category: 'appliance',
+      dimensions: [0.85, 1.85, 0.65],
       parts: [
-        { id: 'ribbed_chrome_barrel', shape: 'cylinder', offset: [-0.04, 0.08, 0], size: [0.045, 0.36, 0.045], rotation: [0, 0, Math.PI / 2], color: '#78705e', roughness: 0.32, metalness: 0.82 },
-        { id: 'beveled_head_cone', shape: 'cone', offset: [0.16, 0.08, 0], size: [0.075, 0.12, 0.075], rotation: [0, 0, -Math.PI / 2], color: '#5e4c2e', roughness: 0.36, metalness: 0.78 },
-        { id: 'thumb_switch_slide', shape: 'box', offset: [0.02, 0.13, 0], size: [0.08, 0.025, 0.03], color: '#4a181b', roughness: 0.6, metalness: 0.4 },
-        { id: 'tungsten_uv_lens', shape: 'cylinder', offset: [0.22, 0.08, 0], size: [0.068, 0.02, 0.068], rotation: [0, 0, Math.PI / 2], color: '#855826', roughness: 0.2, metalness: 0.25, emissive: '#6e562f' }
+        { id: 'alcove_backplate', shape: 'box', offset: [0, 0.92, -0.18], size: [0.78, 1.76, 0.14], color: '#382e26', roughness: 0.72, metalness: 0.25 },
+        { id: 'walnut_side_cheek_l', shape: 'box', offset: [-0.36, 1.05, 0.02], size: [0.06, 1.15, 0.48], color: '#3b2314', roughness: 0.75, metalness: 0.12 },
+        { id: 'walnut_side_cheek_r', shape: 'box', offset: [0.36, 1.05, 0.02], size: [0.06, 1.15, 0.48], color: '#3b2314', roughness: 0.75, metalness: 0.12 },
+        { id: 'chrome_coin_box', shape: 'box', offset: [0, 1.12, -0.02], size: [0.38, 0.56, 0.22], color: '#78705e', roughness: 0.38, metalness: 0.78 },
+        { id: 'rotary_finger_wheel', shape: 'cylinder', offset: [0, 1.16, 0.10], size: [0.11, 0.03, 0.11], rotation: [Math.PI / 2, 0, 0], color: '#d8cfbe', roughness: 0.28, metalness: 0.2 },
+        { id: 'bakelite_handset', shape: 'box', offset: [-0.16, 1.14, 0.08], size: [0.09, 0.34, 0.09], color: '#1c1917', roughness: 0.65, metalness: 0.2 },
+        { id: 'directory_shelf', shape: 'box', offset: [0, 0.72, 0.06], size: [0.68, 0.06, 0.42], color: '#5e4c2e', roughness: 0.55, metalness: 0.6 }
+      ]
+    };
+  }
+
+  if (lower.includes('radiator') || lower.includes('steam')) {
+    return {
+      name: 'Clanking Cast-Iron Steam Radiator',
+      category: 'appliance',
+      dimensions: [1.2, 0.9, 0.4],
+      parts: [
+        { id: 'radiator_core', shape: 'box', offset: [0, 0.45, 0], size: [1.04, 0.74, 0.30], color: '#6e5a38', roughness: 0.68, metalness: 0.62 },
+        { id: 'fin_col_1', shape: 'box', offset: [-0.38, 0.46, 0], size: [0.12, 0.82, 0.34], color: '#5e4c2e', roughness: 0.62, metalness: 0.68 },
+        { id: 'fin_col_2', shape: 'box', offset: [-0.14, 0.46, 0], size: [0.12, 0.82, 0.34], color: '#5e4c2e', roughness: 0.62, metalness: 0.68 },
+        { id: 'fin_col_3', shape: 'box', offset: [0.14, 0.46, 0], size: [0.12, 0.82, 0.34], color: '#5e4c2e', roughness: 0.62, metalness: 0.68 },
+        { id: 'fin_col_4', shape: 'box', offset: [0.38, 0.46, 0], size: [0.12, 0.82, 0.34], color: '#5e4c2e', roughness: 0.62, metalness: 0.68 },
+        { id: 'brass_steam_valve', shape: 'cylinder', offset: [0.56, 0.28, 0.04], size: [0.08, 0.18, 0.08], color: '#8a7238', roughness: 0.35, metalness: 0.85 }
+      ]
+    };
+  }
+
+  if (lower.includes('fridge') || lower.includes('icebox') || lower.includes('refrigerator')) {
+    return {
+      name: '1978 Harvest-Gold Apartment Fridge',
+      category: 'appliance',
+      dimensions: [0.95, 1.65, 0.85],
+      parts: [
+        { id: 'fridge_cabinet', shape: 'box', offset: [0, 0.82, -0.02], size: [0.90, 1.60, 0.76], color: '#7d7559', roughness: 0.46, metalness: 0.25 },
+        { id: 'freezer_door', shape: 'box', offset: [0, 1.34, 0.38], size: [0.86, 0.44, 0.06], color: '#8c8262', roughness: 0.42, metalness: 0.28 },
+        { id: 'main_door', shape: 'box', offset: [0, 0.56, 0.38], size: [0.86, 1.04, 0.06], color: '#8c8262', roughness: 0.42, metalness: 0.28 },
+        { id: 'chrome_handle_top', shape: 'box', offset: [0.34, 1.32, 0.43], size: [0.05, 0.26, 0.05], color: '#cbd5e1', roughness: 0.22, metalness: 0.88 },
+        { id: 'chrome_handle_main', shape: 'box', offset: [0.34, 0.78, 0.43], size: [0.05, 0.42, 0.05], color: '#cbd5e1', roughness: 0.22, metalness: 0.88 }
       ]
     };
   }
@@ -3907,6 +3956,32 @@ export interface RoomBlueprintItem {
   compositeParts?: CompositeSubPart[];
 }
 
+export interface TopDownRoomPreviewItem {
+  name: string;
+  category: AssetCategory;
+  cx: number;
+  cy: number;
+  width: number;
+  depth: number;
+  rotationDeg: number;
+  fillColor: string;
+  strokeColor: string;
+  isWall: boolean;
+  isDoor: boolean;
+  isSecretPassage: boolean;
+  zOrder: number;
+}
+
+export interface TopDownRoomPreviewSpec {
+  viewBoxWidth: number;
+  viewBoxHeight: number;
+  roomSpanX: number;
+  roomSpanZ: number;
+  items: TopDownRoomPreviewItem[];
+  svgMarkup: string;
+  dataUrl: string;
+}
+
 export interface RoomBlueprint {
   id: string;
   name: string;
@@ -3915,9 +3990,212 @@ export interface RoomBlueprint {
   tags: string[];
   boundingSize: [number, number]; // [widthSpanX, depthSpanZ]
   items: RoomBlueprintItem[];
+  previewThumbnailUrl?: string;
+  topDownPreview?: TopDownRoomPreviewSpec;
 }
 
-export const INITIAL_ROOM_BLUEPRINTS: RoomBlueprint[] = [
+/**
+ * Pure helper for Character Creator mouse scroll wheel zoom:
+ * - Scroll forward (deltaY < 0) = Zoom In (camera moves closer, smaller distance down to 1.2m)
+ * - Scroll backward (deltaY > 0) = Zoom Out (camera moves farther, larger distance up to 7.0m)
+ */
+export function computeCharacterCreatorWheelZoom(
+  currentZoom: number | undefined,
+  deltaY: number,
+  deltaMode = 0
+): number {
+  const baseZoom =
+    typeof currentZoom === 'number' && Number.isFinite(currentZoom) ? currentZoom : 3.45;
+  if (!Number.isFinite(deltaY) || deltaY === 0) {
+    return Number(Math.max(1.2, Math.min(7.0, baseZoom)).toFixed(2));
+  }
+  const sign = deltaY > 0 ? 1 : -1;
+  // Normalize across pixel (0), line (1), and page (2) wheel delta modes
+  const normalizedPixels =
+    deltaMode === 1 ? Math.abs(deltaY) * 36 : deltaMode === 2 ? Math.abs(deltaY) * 320 : Math.abs(deltaY);
+  const magnitude = Math.max(0.2, Math.min(0.85, normalizedPixels * 0.0032));
+  const nextZoom = Math.max(1.2, Math.min(7.0, baseZoom + sign * magnitude));
+  return Number(nextZoom.toFixed(2));
+}
+
+function escapeXmlAttr(str: string): string {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/**
+ * Generates a top-down 2D architectural floorplan visual preview (SVG markup + data URL)
+ * capturing the exact spatial layout ([x, z], dimensions, rotation, walls, doors, secret passages, and furniture)
+ * of a RoomBlueprint when saved or displayed in the 'Recent' & Room Blueprints Library.
+ */
+export function generateTopDownRoomBlueprintPreview(
+  items: RoomBlueprintItem[],
+  boundingSize?: [number, number],
+  title?: string
+): TopDownRoomPreviewSpec {
+  const viewBoxWidth = 160;
+  const viewBoxHeight = 112;
+  const pad = 14;
+  const safeItems = Array.isArray(items) ? items : [];
+
+  let minX = -2.5;
+  let maxX = 2.5;
+  let minZ = -2.5;
+  let maxZ = 2.5;
+
+  if (safeItems.length > 0) {
+    minX = Infinity;
+    maxX = -Infinity;
+    minZ = Infinity;
+    maxZ = -Infinity;
+    for (const it of safeItems) {
+      const rx = Number(it.relPosition?.[0]) || 0;
+      const rz = Number(it.relPosition?.[2]) || 0;
+      const w = Math.max(0.2, Number(it.dimensions?.[0]) || 1);
+      const d = Math.max(0.2, Number(it.dimensions?.[2]) || 1);
+      const rot = Number(it.rotationY) || 0;
+      const cos = Math.abs(Math.cos(rot));
+      const sin = Math.abs(Math.sin(rot));
+      const extX = (w * cos + d * sin) * 0.5;
+      const extZ = (w * sin + d * cos) * 0.5;
+      minX = Math.min(minX, rx - extX);
+      maxX = Math.max(maxX, rx + extX);
+      minZ = Math.min(minZ, rz - extZ);
+      maxZ = Math.max(maxZ, rz + extZ);
+    }
+  } else if (Array.isArray(boundingSize) && boundingSize.length === 2) {
+    const sx = Math.max(2, Number(boundingSize[0]) || 4);
+    const sz = Math.max(2, Number(boundingSize[1]) || 4);
+    minX = -sx / 2;
+    maxX = sx / 2;
+    minZ = -sz / 2;
+    maxZ = sz / 2;
+  }
+
+  const rawSpanX = Math.max(1.5, maxX - minX);
+  const rawSpanZ = Math.max(1.5, maxZ - minZ);
+  const roomSpanX = Math.round((boundingSize?.[0] || rawSpanX) * 10) / 10;
+  const roomSpanZ = Math.round((boundingSize?.[1] || rawSpanZ) * 10) / 10;
+  const centerWorldX = (minX + maxX) * 0.5;
+  const centerWorldZ = (minZ + maxZ) * 0.5;
+
+  const usableW = viewBoxWidth - pad * 2;
+  const usableH = viewBoxHeight - pad * 2 - 10;
+  const scale = Math.min(usableW / Math.max(rawSpanX, 2.2), usableH / Math.max(rawSpanZ, 2.2));
+  const svgCenterX = viewBoxWidth * 0.5;
+  const svgCenterY = (viewBoxHeight - 8) * 0.5;
+
+  const previewItems: TopDownRoomPreviewItem[] = safeItems.map((it) => {
+    const rx = Number(it.relPosition?.[0]) || 0;
+    const rz = Number(it.relPosition?.[2]) || 0;
+    const w = Math.max(0.25, Number(it.dimensions?.[0]) || 0.8);
+    const d = Math.max(0.22, Number(it.dimensions?.[2]) || 0.8);
+    const rotRad = Number(it.rotationY) || 0;
+    const rotationDeg = Number(((rotRad * 180) / Math.PI).toFixed(1));
+
+    const cx = Number((svgCenterX + (rx - centerWorldX) * scale).toFixed(2));
+    const cy = Number((svgCenterY + (rz - centerWorldZ) * scale).toFixed(2));
+    const width = Number(Math.max(3.5, w * scale).toFixed(2));
+    const depth = Number(Math.max(3.2, d * scale).toFixed(2));
+
+    const isWall =
+      it.category === 'wall' || it.category === 'window_wall' || it.category === 'secret_wall';
+    const isDoor = it.category === 'door';
+    const isSecretPassage = Boolean(it.isSecretPassage || it.category === 'secret_wall');
+
+    let zOrder = 1;
+    if (it.category === 'floor_tile') zOrder = 0;
+    else if (it.category === 'lighting') zOrder = 2;
+    else if (isWall || isDoor) zOrder = 3;
+
+    const fillColor = it.color || (isWall ? '#8a8170' : '#5e4c2e');
+    const strokeColor = isSecretPassage
+      ? '#f59e0b'
+      : isDoor
+      ? '#38bdf8'
+      : isWall
+      ? '#e2e8f0'
+      : '#cbd5e1';
+
+    return {
+      name: it.name || it.subType || 'Object',
+      category: it.category,
+      cx,
+      cy,
+      width,
+      depth,
+      rotationDeg,
+      fillColor,
+      strokeColor,
+      isWall,
+      isDoor,
+      isSecretPassage,
+      zOrder
+    };
+  });
+
+  previewItems.sort((a, b) => a.zOrder - b.zOrder);
+
+  // Room footprint boundary in SVG space
+  const roomRectW = Number(Math.min(viewBoxWidth - 10, Math.max(36, rawSpanX * scale + 8)).toFixed(1));
+  const roomRectH = Number(Math.min(viewBoxHeight - 18, Math.max(28, rawSpanZ * scale + 8)).toFixed(1));
+  const roomRectX = Number((svgCenterX - roomRectW * 0.5).toFixed(1));
+  const roomRectY = Number((svgCenterY - roomRectH * 0.5).toFixed(1));
+
+  const gridLines: string[] = [];
+  const stepPx = Math.max(10, Math.round(scale));
+  for (let gx = stepPx; gx < viewBoxWidth; gx += stepPx) {
+    gridLines.push(
+      `<line x1="${gx}" y1="0" x2="${gx}" y2="${viewBoxHeight}" stroke="#1e293b" stroke-width="0.6" />`
+    );
+  }
+  for (let gy = stepPx; gy < viewBoxHeight; gy += stepPx) {
+    gridLines.push(
+      `<line x1="0" y1="${gy}" x2="${viewBoxWidth}" y2="${gy}" stroke="#1e293b" stroke-width="0.6" />`
+    );
+  }
+
+  const shapesSvg = previewItems
+    .map((p) => {
+      const hw = Number((p.width * 0.5).toFixed(2));
+      const hd = Number((p.depth * 0.5).toFixed(2));
+      const dash = p.isSecretPassage ? ' stroke-dasharray="2.5,1.5"' : '';
+      const opacity = p.category === 'floor_tile' ? '0.52' : p.isWall ? '0.96' : '0.88';
+      const innerDetail = p.isDoor
+        ? `<path d="M ${-hw} ${hd} A ${p.width} ${p.width} 0 0 1 ${hw} ${hd - p.width * 0.65}" fill="none" stroke="#38bdf8" stroke-width="0.9" stroke-dasharray="2,1.5" />`
+        : p.category === 'lighting'
+        ? `<circle cx="0" cy="0" r="${Math.max(3.5, Math.min(hw, hd) * 1.35).toFixed(1)}" fill="#fbbf24" fill-opacity="0.28" stroke="#fde68a" stroke-width="0.7" />`
+        : !p.isWall && p.category !== 'floor_tile'
+        ? `<rect x="${(-hw * 0.72).toFixed(2)}" y="${(-hd * 0.72).toFixed(2)}" width="${(p.width * 0.72).toFixed(2)}" height="${(p.depth * 0.72).toFixed(2)}" rx="1" fill="none" stroke="#ffffff" stroke-opacity="0.28" stroke-width="0.6" />`
+        : '';
+
+      return `<g transform="translate(${p.cx},${p.cy}) rotate(${p.rotationDeg})"><title>${escapeXmlAttr(p.name)}</title><rect x="${-hw}" y="${-hd}" width="${p.width}" height="${p.depth}" rx="${p.isWall ? 0.8 : 1.6}" fill="${escapeXmlAttr(p.fillColor)}" fill-opacity="${opacity}" stroke="${escapeXmlAttr(p.strokeColor)}" stroke-width="${p.isWall ? 1.2 : 0.85}"${dash} />${innerDetail}</g>`;
+    })
+    .join('');
+
+  const cleanTitle = escapeXmlAttr((title || 'TOP-DOWN PLAN').slice(0, 22));
+  const dimsLabel = `${roomSpanX}×${roomSpanZ}m · ${safeItems.length} obj`;
+
+  const svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewBoxWidth} ${viewBoxHeight}" width="${viewBoxWidth}" height="${viewBoxHeight}"><rect width="${viewBoxWidth}" height="${viewBoxHeight}" rx="8" fill="#091326" />${gridLines.join('')}<rect x="${roomRectX}" y="${roomRectY}" width="${roomRectW}" height="${roomRectH}" rx="2" fill="#0f2342" fill-opacity="0.55" stroke="#38bdf8" stroke-opacity="0.45" stroke-width="0.9" stroke-dasharray="3,2" />${shapesSvg}<rect x="0" y="${viewBoxHeight - 15}" width="${viewBoxWidth}" height="15" fill="#020617" fill-opacity="0.82" /><text x="6" y="${viewBoxHeight - 4.5}" fill="#7dd3fc" font-family="monospace" font-size="7.5" font-weight="bold">TOP-DOWN · ${cleanTitle}</text><text x="${viewBoxWidth - 5}" y="${viewBoxHeight - 4.5}" text-anchor="end" fill="#fbbf24" font-family="monospace" font-size="7.2" font-weight="bold">${escapeXmlAttr(dimsLabel)}</text></svg>`;
+
+  const dataUrl = `data:image/svg+xml;utf8,${encodeURIComponent(svgMarkup)}`;
+
+  return {
+    viewBoxWidth,
+    viewBoxHeight,
+    roomSpanX,
+    roomSpanZ,
+    items: previewItems,
+    svgMarkup,
+    dataUrl
+  };
+}
+
+const RAW_INITIAL_ROOM_BLUEPRINTS: RoomBlueprint[] = [
   {
     id: 'bp_room_lobby_registry',
     name: 'Front Desk & Registry Alcove',
@@ -4128,8 +4406,18 @@ export const INITIAL_ROOM_BLUEPRINTS: RoomBlueprint[] = [
   }
 ];
 
+export const INITIAL_ROOM_BLUEPRINTS: RoomBlueprint[] = RAW_INITIAL_ROOM_BLUEPRINTS.map((bp) => {
+  const preview = generateTopDownRoomBlueprintPreview(bp.items, bp.boundingSize, bp.name);
+  return {
+    ...bp,
+    previewThumbnailUrl: preview.dataUrl,
+    topDownPreview: preview
+  };
+});
+
 /**
- * Pure helper to save a collection of placed assets as a centered, reusable RoomBlueprint.
+ * Pure helper to save a collection of placed assets as a centered, reusable RoomBlueprint
+ * with an automatically captured top-down visual floorplan preview.
  */
 export function createRoomBlueprintFromAssets(
   name: string,
@@ -4139,6 +4427,7 @@ export function createRoomBlueprintFromAssets(
 ): RoomBlueprint {
   const cleanName = name.trim() || `Custom Room Blueprint (${sourceAssets.length} objs)`;
   if (sourceAssets.length === 0) {
+    const emptyPreview = generateTopDownRoomBlueprintPreview([], [4, 4], cleanName);
     return {
       id: `bp_room_${Date.now()}`,
       name: cleanName,
@@ -4146,7 +4435,9 @@ export function createRoomBlueprintFromAssets(
       createdAt: new Date().toISOString(),
       tags,
       boundingSize: [4, 4],
-      items: []
+      items: [],
+      previewThumbnailUrl: emptyPreview.dataUrl,
+      topDownPreview: emptyPreview
     };
   }
 
@@ -4188,6 +4479,8 @@ export function createRoomBlueprintFromAssets(
     compositeParts: a.compositeParts ? a.compositeParts.map((p) => ({ ...p })) : undefined
   }));
 
+  const topDownPreview = generateTopDownRoomBlueprintPreview(items, [spanX, spanZ], cleanName);
+
   return {
     id: `bp_room_${Date.now()}`,
     name: cleanName,
@@ -4197,7 +4490,9 @@ export function createRoomBlueprintFromAssets(
     createdAt: new Date().toISOString(),
     tags,
     boundingSize: [spanX, spanZ],
-    items
+    items,
+    previewThumbnailUrl: topDownPreview.dataUrl,
+    topDownPreview
   };
 }
 
@@ -4333,7 +4628,7 @@ export function createDefaultStudioWindows(): Record<StudioWindowId, StudioWindo
       height: 356,
       minWidth: 270,
       minHeight: 230,
-      isOpen: true,
+      isOpen: false,
       isMinimized: false,
       isMaximized: false,
       zIndex: 24
@@ -8912,7 +9207,6 @@ export function getTaskbarWindowIdsForMode(mode: EditorWorkspaceModeId): StudioW
     'local_fs',
     'projects',
     'keybindings',
-    'blueprints',
     'tools',
     'catalog',
     'inspector',
@@ -10985,6 +11279,71 @@ export function batchSwapAssetsConditionVariant(
     swappedCount: swappedAssets.length,
     conditionVariant: safeVariant,
     message
+  };
+}
+
+export const RENOVATION_THEME_OPTIONS: ReadonlyArray<{
+  id: AssetConditionVariant;
+  label: "78's Pristine" | "70's Unkempt" | "90's Updated";
+  era: '1970s' | '1990s';
+  description: string;
+}> = [
+  {
+    id: 'pristine',
+    label: "78's Pristine",
+    era: '1970s',
+    description: 'Switches all assets to 1978 Pristine condition.'
+  },
+  {
+    id: 'unkempt',
+    label: "70's Unkempt",
+    era: '1970s',
+    description: 'Switches all assets to 1970s Unkempt weathered condition.'
+  },
+  {
+    id: 'updated',
+    label: "90's Updated",
+    era: '1990s',
+    description: 'Switches all assets to 1990s Updated hotel renovation condition.'
+  }
+] as const;
+
+/**
+ * Switches ALL placed assets across the scene/lot to the selected Renovation theme
+ * ("78's Pristine" -> 'pristine', "70's Unkempt" -> 'unkempt', "90's Updated" -> 'updated')
+ * in a single atomic batch operation.
+ */
+export function applyGlobalRenovationTheme(
+  assets: readonly PlacedAsset[],
+  targetTheme: AssetConditionVariant,
+  allBlueprints: readonly SearchableBlueprintLike[] = []
+): {
+  updatedAssets: PlacedAsset[];
+  swappedAssets: PlacedAsset[];
+  swappedCount: number;
+  theme: AssetConditionVariant;
+  targetTheme: AssetConditionVariant;
+  themeLabel: string;
+  message: string;
+} {
+  const safeTheme: AssetConditionVariant =
+    targetTheme === 'unkempt' || targetTheme === 'updated' || targetTheme === 'pristine'
+      ? targetTheme
+      : 'pristine';
+  const themeMeta =
+    RENOVATION_THEME_OPTIONS.find((opt) => opt.id === safeTheme) || RENOVATION_THEME_OPTIONS[0];
+  const safeAssets = Array.isArray(assets) ? assets : [];
+  const allIds = safeAssets.map((a) => a.id).filter(Boolean);
+  const batchRes = batchSwapAssetsConditionVariant(safeAssets, allIds, safeTheme, allBlueprints);
+
+  return {
+    updatedAssets: batchRes.updatedAssets,
+    swappedAssets: batchRes.swappedAssets,
+    swappedCount: batchRes.swappedCount,
+    theme: safeTheme,
+    targetTheme: safeTheme,
+    themeLabel: themeMeta.label,
+    message: `Applied "${themeMeta.label}" Renovation theme — switched ${batchRes.swappedCount} asset(s) across the building.`
   };
 }
 

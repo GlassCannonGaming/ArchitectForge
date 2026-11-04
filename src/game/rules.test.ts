@@ -495,7 +495,7 @@ test('Floating Studio Window Manager supports moving, resizing, minimizing, maxi
   } = await import('./rules');
 
   let wins = createDefaultStudioWindows();
-  assert.equal(wins.blueprints.isOpen, true);
+  assert.equal(wins.blueprints.isOpen, false);
   assert.equal(wins.catalog.isOpen, true);
 
   wins = updateStudioWindowPosition(wins, 'blueprints', 180, 120, 1280, 800);
@@ -4265,5 +4265,202 @@ test('Custom flicker FPS override configures individual light animation frequenc
   assert.equal(modified[0].isLightEmitting, true);
 });
 
+test('Character Creator cameraZoom and full ASSET_CATALOG 3D model / preview parity', async () => {
+  const { buildProcedural3DSpecFromPrompt } = await import('./rules');
+  const { ASSET_CATALOG } = await import('./hotelData');
+  const { getBlueprint3DPreviewParts, resolveCatalogCompositeParts } = await import('./procedural3D');
 
+  // 1. Flashlight prompt resolves to 4-part ribbed chrome D-cell flashlight (not hijacked by generic floor lamp)
+  const flashlightSpec = buildProcedural3DSpecFromPrompt('1970s Chrome D-Cell Inspection Flashlight');
+  assert.equal(flashlightSpec.name, '1970s Chrome D-Cell Inspection Flashlight');
+  assert.equal(flashlightSpec.parts.some((p) => p.id === 'ribbed_chrome_barrel'), true);
+  assert.equal(flashlightSpec.parts.some((p) => p.id === 'tungsten_uv_lens'), true);
+
+  // 2. Payphone, radiator, and fridge prompts resolve to dedicated multi-part 3D models
+  const payphoneSpec = buildProcedural3DSpecFromPrompt('Late-70s Rotary Payphone Alcove');
+  assert.equal(payphoneSpec.parts.some((p) => p.id === 'rotary_finger_wheel'), true);
+
+  const radiatorSpec = buildProcedural3DSpecFromPrompt('Clanking Cast-Iron Steam Radiator');
+  assert.equal(radiatorSpec.parts.some((p) => p.id === 'brass_steam_valve'), true);
+
+  // 3. Every blueprint in ASSET_CATALOG resolves non-empty 3D preview parts matching its in-game 3D model
+  assert.equal(ASSET_CATALOG.length >= 280, true);
+  for (const bp of ASSET_CATALOG) {
+    const previewParts = getBlueprint3DPreviewParts(bp);
+    assert.equal(
+      Array.isArray(previewParts) && previewParts.length >= 2,
+      true,
+      `Expected >=2 3D preview parts for ${bp.subType} (${bp.name})`
+    );
+    const catalogParts = resolveCatalogCompositeParts(bp.subType, bp.name, bp.compositeParts);
+    if (catalogParts && catalogParts.length > 0) {
+      assert.deepEqual(previewParts, catalogParts);
+    }
+  }
+});
+
+test('Top-down room blueprint visual preview generator and Character Creator mouse wheel zoom (forward = in, backward = out)', async () => {
+  const {
+    createRoomBlueprintFromAssets,
+    generateTopDownRoomBlueprintPreview,
+    INITIAL_ROOM_BLUEPRINTS,
+    computeCharacterCreatorWheelZoom
+  } = await import('./rules');
+
+  // 1. All starter/recent room blueprints include generated top-down preview thumbnails
+  for (const bp of INITIAL_ROOM_BLUEPRINTS) {
+    assert.equal(typeof bp.previewThumbnailUrl === 'string' && bp.previewThumbnailUrl.startsWith('data:image/svg+xml;utf8,'), true);
+    assert.equal(Boolean(bp.topDownPreview && bp.topDownPreview.items.length === bp.items.length), true);
+  }
+
+  // 2. Saving a new RoomBlueprint captures a top-down view of the room layout
+  const savedBp = createRoomBlueprintFromAssets(
+    'Detective Study Layout',
+    'Top-down test room',
+    [
+      {
+        id: 'w1',
+        name: 'North Brick Wall',
+        category: 'wall',
+        subType: 'wall_brick_standard',
+        floor: 'floor1',
+        position: [0, 1.5, -2.5],
+        dimensions: [5.0, 3.0, 0.3],
+        rotationY: 0,
+        color: '#592820',
+        textureId: 'nyc_old_brick',
+        collidable: true
+      },
+      {
+        id: 'd1',
+        name: 'Suite Door',
+        category: 'door',
+        subType: 'transom_hotel_door',
+        floor: 'floor1',
+        position: [-2.2, 1.3, 0],
+        dimensions: [1.4, 2.6, 0.25],
+        rotationY: Math.PI / 2,
+        color: '#3b2314',
+        textureId: 'oak_parquet',
+        collidable: true
+      },
+      {
+        id: 'f1',
+        name: 'Concierge Desk',
+        category: 'furniture',
+        subType: 'concierge_desk',
+        floor: 'floor1',
+        position: [0.5, 0.55, 0.5],
+        dimensions: [2.2, 1.1, 0.9],
+        rotationY: 0,
+        color: '#3b2314',
+        textureId: 'oak_parquet',
+        collidable: true
+      }
+    ],
+    ['study', 'recent']
+  );
+
+  assert.equal(typeof savedBp.previewThumbnailUrl, 'string');
+  assert.equal(savedBp.previewThumbnailUrl!.startsWith('data:image/svg+xml;utf8,'), true);
+  assert.ok(savedBp.topDownPreview);
+  assert.equal(savedBp.topDownPreview!.items.length, 3);
+  assert.equal(savedBp.topDownPreview!.svgMarkup.includes('TOP-DOWN · Detective Study Layout'), true);
+
+  const directPreview = generateTopDownRoomBlueprintPreview(savedBp.items, savedBp.boundingSize, savedBp.name);
+  assert.equal(directPreview.items.some((i) => i.isWall), true);
+  assert.equal(directPreview.items.some((i) => i.isDoor), true);
+
+  // 3. Mouse scroll wheel zoom in Character Creator: scroll forward (deltaY < 0) = zoom in, scroll backward (deltaY > 0) = zoom out
+  const defaultZoom = 3.45;
+  const zoomedIn = computeCharacterCreatorWheelZoom(defaultZoom, -100, 0);
+  const zoomedOut = computeCharacterCreatorWheelZoom(defaultZoom, 100, 0);
+  assert.equal(zoomedIn < defaultZoom, true, `Expected scroll forward (deltaY < 0) to zoom in (< ${defaultZoom}), got ${zoomedIn}`);
+  assert.equal(zoomedOut > defaultZoom, true, `Expected scroll backward (deltaY > 0) to zoom out (> ${defaultZoom}), got ${zoomedOut}`);
+
+  // Clamping at bounds [1.2, 7.0]
+  assert.equal(computeCharacterCreatorWheelZoom(1.25, -500, 0), 1.2);
+  assert.equal(computeCharacterCreatorWheelZoom(6.9, 500, 0), 7.0);
+});
+
+test('Catalog Renovation themes (78s Pristine, 70s Unkempt, 90s Updated) switch all assets and Room Blueprints is moved out of WINDOWS taskbar', async () => {
+  const {
+    RENOVATION_THEME_OPTIONS,
+    applyGlobalRenovationTheme,
+    getTaskbarWindowIdsForMode,
+    createDefaultStudioWindows
+  } = await import('./rules');
+  const { ASSET_CATALOG } = await import('./hotelData');
+
+  // 1. Verify RENOVATION_THEME_OPTIONS contains "78's Pristine", "70's Unkempt", and "90's Updated"
+  assert.equal(RENOVATION_THEME_OPTIONS.length, 3);
+  assert.deepEqual(
+    RENOVATION_THEME_OPTIONS.map((o) => o.label),
+    ["78's Pristine", "70's Unkempt", "90's Updated"]
+  );
+  assert.deepEqual(
+    RENOVATION_THEME_OPTIONS.map((o) => o.id),
+    ['pristine', 'unkempt', 'updated']
+  );
+
+  // 2. Verify selecting a Renovation theme switches all placed assets across the building
+  const testAssets: PlacedAsset[] = [
+    {
+      id: 'reno_sofa_1',
+      name: '1978 Velvet Tufted Sofa (Pristine)',
+      category: 'furniture',
+      subType: 'apt_lr_sofa_pristine',
+      floor: 'floor1',
+      position: [0, 0.45, 0],
+      dimensions: [2.1, 0.85, 0.9],
+      rotationY: 0,
+      color: '#4a5438',
+      textureId: 'velvet_crimson',
+      collidable: true,
+      conditionVariant: 'pristine',
+      era: '1970s'
+    },
+    {
+      id: 'reno_tv_2',
+      name: '1978 Woodgrain Console TV (Pristine)',
+      category: 'appliance',
+      subType: 'apt_lr_crt_tv_console_pristine',
+      floor: 'floor2',
+      position: [2, 0.45, -1],
+      dimensions: [0.95, 0.85, 0.58],
+      rotationY: 0,
+      color: '#5c3a21',
+      textureId: 'oak_parquet',
+      collidable: true,
+      conditionVariant: 'pristine',
+      era: '1970s'
+    }
+  ];
+
+  // Switch all assets to "70's Unkempt"
+  const unkemptRes = applyGlobalRenovationTheme(testAssets, 'unkempt', ASSET_CATALOG);
+  assert.equal(unkemptRes.targetTheme, 'unkempt');
+  assert.equal(unkemptRes.swappedCount, 2);
+  assert.equal(unkemptRes.updatedAssets.every((a) => a.conditionVariant === 'unkempt'), true);
+
+  // Switch all assets to "90's Updated"
+  const updated90sRes = applyGlobalRenovationTheme(unkemptRes.updatedAssets, 'updated', ASSET_CATALOG);
+  assert.equal(updated90sRes.targetTheme, 'updated');
+  assert.equal(updated90sRes.swappedCount, 2);
+  assert.equal(updated90sRes.updatedAssets.every((a) => a.conditionVariant === 'updated'), true);
+  assert.equal(updated90sRes.updatedAssets.every((a) => a.era === '1990s'), true);
+
+  // Switch all assets back to "78's Pristine"
+  const pristineRes = applyGlobalRenovationTheme(updated90sRes.updatedAssets, 'pristine', ASSET_CATALOG);
+  assert.equal(pristineRes.targetTheme, 'pristine');
+  assert.equal(pristineRes.swappedCount, 2);
+  assert.equal(pristineRes.updatedAssets.every((a) => a.conditionVariant === 'pristine'), true);
+  assert.equal(pristineRes.updatedAssets.every((a) => a.era === '1970s'), true);
+
+  // 3. Verify Room Blueprints button is moved out of WINDOWS taskbar section
+  const archTaskbarIds = getTaskbarWindowIdsForMode('architect');
+  assert.equal(archTaskbarIds.includes('blueprints'), false);
+  const defaultWins = createDefaultStudioWindows();
+  assert.equal(defaultWins.blueprints.isOpen, false);
+});
 

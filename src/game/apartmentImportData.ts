@@ -2163,6 +2163,168 @@ export const APARTMENT_1978_ORIGINAL_CATALOG_BLUEPRINTS: ApartmentAssetBlueprint
   }
 ];
 
+const BESPOKE_1978_COMPOSITE_PARTS: Record<string, CompositeSubPart[]> = {
+  apt_almond_dishwasher: [
+    { id: 'cabinet_hull', shape: 'box', offset: [0, 0.46, -0.02], size: [0.83, 0.90, 0.78], color: '#dfd0b8', roughness: 0.45, metalness: 0.25 },
+    { id: 'front_door', shape: 'box', offset: [0, 0.38, 0.39], size: [0.81, 0.70, 0.05], color: '#e7dac4', roughness: 0.4, metalness: 0.3 },
+    { id: 'control_panel', shape: 'box', offset: [0, 0.82, 0.40], size: [0.81, 0.16, 0.06], color: '#2b2520', roughness: 0.55, metalness: 0.4 },
+    { id: 'cycle_timer_dial', shape: 'cylinder', offset: [0.26, 0.82, 0.44], size: [0.055, 0.04, 0.055], rotation: [Math.PI / 2, 0, 0], color: '#cbd5e1', roughness: 0.25, metalness: 0.85 },
+    { id: 'latch_handle', shape: 'box', offset: [0, 0.72, 0.43], size: [0.32, 0.04, 0.04], color: '#94a3b8', roughness: 0.25, metalness: 0.85 }
+  ],
+  apt_formica_countertop_wood_trim: [
+    { id: 'walnut_base_cabinet', shape: 'box', offset: [0, 0.44, -0.02], size: [2.14, 0.86, 0.74], color: '#4a2c17', roughness: 0.72, metalness: 0.1 },
+    { id: 'speckled_formica_top', shape: 'box', offset: [0, 0.90, 0], size: [2.20, 0.07, 0.80], color: '#dfd7c5', roughness: 0.38, metalness: 0.12 },
+    { id: 'walnut_edge_trim', shape: 'box', offset: [0, 0.90, 0.405], size: [2.21, 0.075, 0.02], color: '#361e0e', roughness: 0.65, metalness: 0.12 },
+    { id: 'stainless_sink_rim', shape: 'box', offset: [-0.35, 0.94, 0.02], size: [0.76, 0.03, 0.52], color: '#94a3b8', roughness: 0.28, metalness: 0.82 },
+    { id: 'sink_basin_well', shape: 'box', offset: [-0.35, 0.95, 0.02], size: [0.66, 0.02, 0.42], color: '#334155', roughness: 0.35, metalness: 0.75 },
+    { id: 'chrome_faucet_spout', shape: 'cylinder', offset: [-0.35, 1.04, -0.20], size: [0.03, 0.18, 0.03], color: '#cbd5e1', roughness: 0.2, metalness: 0.9 }
+  ],
+  apt_amber_bubble_glass_fixture: [
+    { id: 'brass_ceiling_pan', shape: 'box', offset: [0, 0.24, 0], size: [0.42, 0.05, 0.42], color: '#7a6639', roughness: 0.38, metalness: 0.82 },
+    { id: 'amber_bubble_diffuser', shape: 'box', offset: [0, 0.13, 0], size: [0.38, 0.18, 0.38], color: '#b47828', roughness: 0.25, metalness: 0.15, emissive: '#d97706' },
+    { id: 'center_brass_finial', shape: 'sphere', offset: [0, 0.02, 0], size: [0.045, 0.045, 0.045], color: '#5c4826', roughness: 0.35, metalness: 0.85 }
+  ],
+  apt_round_dial_thermostat: [
+    { id: 'wall_subbase_plate', shape: 'cylinder', offset: [0, 0.11, -0.02], size: [0.105, 0.03, 0.105], rotation: [Math.PI / 2, 0, 0], color: '#6b542c', roughness: 0.45, metalness: 0.78 },
+    { id: 'knurled_brass_ring', shape: 'cylinder', offset: [0, 0.11, 0.01], size: [0.092, 0.04, 0.092], rotation: [Math.PI / 2, 0, 0], color: '#8c764a', roughness: 0.35, metalness: 0.85 },
+    { id: 'temperature_scale_face', shape: 'cylinder', offset: [0, 0.11, 0.035], size: [0.068, 0.015, 0.068], rotation: [Math.PI / 2, 0, 0], color: '#e5ded0', roughness: 0.28, metalness: 0.2 }
+  ],
+  brass_towel_rack: [
+    { id: 'mount_post_left', shape: 'box', offset: [-0.32, 0.12, -0.06], size: [0.06, 0.08, 0.12], color: '#594d36', roughness: 0.42, metalness: 0.8 },
+    { id: 'mount_post_right', shape: 'box', offset: [0.32, 0.12, -0.06], size: [0.06, 0.08, 0.12], color: '#594d36', roughness: 0.42, metalness: 0.8 },
+    { id: 'brass_rail_bar', shape: 'cylinder', offset: [0, 0.12, 0.02], size: [0.025, 0.68, 0.025], rotation: [0, 0, Math.PI / 2], color: '#6e5835', roughness: 0.38, metalness: 0.85 },
+    { id: 'folded_terry_towel', shape: 'box', offset: [0, 0.08, 0.03], size: [0.46, 0.14, 0.09], color: '#877f70', roughness: 0.92, metalness: 0.02 }
+  ],
+  apt_hollywood_bulb_vanity_mirror: [
+    { id: 'mirror_frame_backing', shape: 'box', offset: [0, 0.55, -0.03], size: [1.36, 1.06, 0.05], color: '#475569', roughness: 0.5, metalness: 0.6 },
+    { id: 'silvered_mirror_glass', shape: 'box', offset: [0, 0.50, 0.01], size: [1.22, 0.84, 0.02], color: '#cbd5e1', roughness: 0.12, metalness: 0.88 },
+    { id: 'top_chrome_socket_bar', shape: 'box', offset: [0, 0.98, 0.03], size: [1.30, 0.08, 0.05], color: '#e2e8f0', roughness: 0.22, metalness: 0.9 },
+    { id: 'globe_bulb_1', shape: 'sphere', offset: [-0.48, 0.98, 0.08], size: [0.055, 0.055, 0.055], color: '#fef3c7', roughness: 0.15, metalness: 0.1, emissive: '#fde68a' },
+    { id: 'globe_bulb_2', shape: 'sphere', offset: [-0.16, 0.98, 0.08], size: [0.055, 0.055, 0.055], color: '#fef3c7', roughness: 0.15, metalness: 0.1, emissive: '#fde68a' },
+    { id: 'globe_bulb_3', shape: 'sphere', offset: [0.16, 0.98, 0.08], size: [0.055, 0.055, 0.055], color: '#fef3c7', roughness: 0.15, metalness: 0.1, emissive: '#fde68a' },
+    { id: 'globe_bulb_4', shape: 'sphere', offset: [0.48, 0.98, 0.08], size: [0.055, 0.055, 0.055], color: '#fef3c7', roughness: 0.15, metalness: 0.1, emissive: '#fde68a' }
+  ],
+  apt_lr_television_pristine: [
+    { id: 'walnut_console_cabinet', shape: 'box', offset: [0, 0.42, 0], size: [1.06, 0.78, 0.68], color: '#3d2516', roughness: 0.58, metalness: 0.12 },
+    { id: 'gold_trim_bezel', shape: 'box', offset: [0, 0.44, 0.35], size: [0.96, 0.66, 0.04], color: '#786438', roughness: 0.42, metalness: 0.65 },
+    { id: 'curved_crt_screen', shape: 'box', offset: [-0.10, 0.45, 0.37], size: [0.68, 0.54, 0.03], color: '#2b3d34', roughness: 0.18, metalness: 0.35, emissive: '#1e2f26' },
+    { id: 'tuner_panel_strip', shape: 'box', offset: [0.34, 0.45, 0.37], size: [0.16, 0.54, 0.03], color: '#1c1917', roughness: 0.7, metalness: 0.2 },
+    { id: 'vhf_dial', shape: 'cylinder', offset: [0.34, 0.58, 0.39], size: [0.05, 0.03, 0.05], rotation: [Math.PI / 2, 0, 0], color: '#cbd5e1', roughness: 0.3, metalness: 0.85 },
+    { id: 'uhf_dial', shape: 'cylinder', offset: [0.34, 0.42, 0.39], size: [0.05, 0.03, 0.05], rotation: [Math.PI / 2, 0, 0], color: '#cbd5e1', roughness: 0.3, metalness: 0.85 }
+  ],
+  apt_lr_television_unkempt: [
+    { id: 'scarred_console_cabinet', shape: 'box', offset: [0, 0.42, 0], size: [1.06, 0.78, 0.68], color: '#2b190f', roughness: 0.88, metalness: 0.08 },
+    { id: 'grimy_bezel', shape: 'box', offset: [0, 0.44, 0.35], size: [0.96, 0.66, 0.04], color: '#443829', roughness: 0.78, metalness: 0.35 },
+    { id: 'static_crt_screen', shape: 'box', offset: [-0.10, 0.45, 0.37], size: [0.68, 0.54, 0.03], color: '#475569', roughness: 0.25, metalness: 0.3, emissive: '#334155' },
+    { id: 'tuner_panel_strip', shape: 'box', offset: [0.34, 0.45, 0.37], size: [0.16, 0.54, 0.03], color: '#18181b', roughness: 0.85, metalness: 0.15 },
+    { id: 'rabbit_ear_left', shape: 'cylinder', offset: [-0.15, 0.90, 0], size: [0.012, 0.34, 0.012], rotation: [0, 0, 0.42], color: '#94a3b8', roughness: 0.4, metalness: 0.8 },
+    { id: 'rabbit_ear_right', shape: 'cylinder', offset: [0.15, 0.90, 0], size: [0.012, 0.34, 0.012], rotation: [0, 0, -0.55], color: '#94a3b8', roughness: 0.4, metalness: 0.8 }
+  ],
+  apt_lr_coasters_tray_pristine: [
+    { id: 'walnut_serving_tray', shape: 'box', offset: [0, 0.03, 0], size: [0.44, 0.04, 0.34], color: '#78350f', roughness: 0.55, metalness: 0.12 },
+    { id: 'cork_coaster_stack_1', shape: 'cylinder', offset: [-0.10, 0.065, 0], size: [0.065, 0.035, 0.065], color: '#b45309', roughness: 0.88, metalness: 0.04 },
+    { id: 'cork_coaster_stack_2', shape: 'cylinder', offset: [0.10, 0.06, 0], size: [0.065, 0.025, 0.065], color: '#d97706', roughness: 0.88, metalness: 0.04 }
+  ],
+  apt_lr_extension_cords_unkempt: [
+    { id: 'cord_coil_1', shape: 'torus', offset: [-0.12, 0.04, 0.04], size: [0.22, 0.025, 0.22], rotation: [Math.PI / 2, 0, 0], color: '#18181b', roughness: 0.85, metalness: 0.1 },
+    { id: 'cord_coil_2', shape: 'torus', offset: [0.10, 0.05, -0.06], size: [0.18, 0.025, 0.18], rotation: [Math.PI / 2, 0.2, 0], color: '#27272a', roughness: 0.85, metalness: 0.1 },
+    { id: 'splitter_strip_box', shape: 'box', offset: [0.04, 0.05, 0.14], size: [0.28, 0.05, 0.09], color: '#52525b', roughness: 0.65, metalness: 0.35 }
+  ],
+  apt_kit_kettle_pristine: [
+    { id: 'chrome_kettle_dome', shape: 'cylinder', offset: [0, 0.11, 0], size: [0.14, 0.18, 0.14], color: '#e2e8f0', roughness: 0.2, metalness: 0.88 },
+    { id: 'kettle_lid_cap', shape: 'cylinder', offset: [0, 0.21, 0], size: [0.08, 0.03, 0.08], color: '#18181b', roughness: 0.6, metalness: 0.2 },
+    { id: 'whistle_spout', shape: 'cylinder', offset: [0.13, 0.16, 0], size: [0.03, 0.12, 0.03], rotation: [0, 0, -0.6], color: '#cbd5e1', roughness: 0.25, metalness: 0.85 },
+    { id: 'arched_bakelite_handle', shape: 'torus', offset: [0, 0.22, 0], size: [0.10, 0.02, 0.10], color: '#18181b', roughness: 0.7, metalness: 0.15 }
+  ],
+  apt_kit_kettle_unkempt: [
+    { id: 'greasy_kettle_dome', shape: 'cylinder', offset: [0, 0.11, 0], size: [0.14, 0.18, 0.14], color: '#71717a', roughness: 0.75, metalness: 0.45 },
+    { id: 'kettle_lid_cap', shape: 'cylinder', offset: [0, 0.21, 0], size: [0.08, 0.03, 0.08], color: '#27272a', roughness: 0.85, metalness: 0.15 },
+    { id: 'scaled_spout', shape: 'cylinder', offset: [0.13, 0.16, 0], size: [0.03, 0.12, 0.03], rotation: [0, 0, -0.6], color: '#52525b', roughness: 0.7, metalness: 0.5 },
+    { id: 'arched_handle', shape: 'torus', offset: [0, 0.22, 0], size: [0.10, 0.02, 0.10], color: '#292524', roughness: 0.85, metalness: 0.1 }
+  ],
+  apt_bath_toilet_paper_pristine: [
+    { id: 'chrome_wall_spindle', shape: 'box', offset: [0, 0.10, -0.05], size: [0.22, 0.06, 0.06], color: '#cbd5e1', roughness: 0.22, metalness: 0.9 },
+    { id: 'full_paper_roll', shape: 'cylinder', offset: [0, 0.10, 0.02], size: [0.075, 0.16, 0.075], rotation: [0, 0, Math.PI / 2], color: '#ffffff', roughness: 0.9, metalness: 0.02 }
+  ],
+  apt_bath_toilet_paper_unkempt: [
+    { id: 'damp_paper_roll', shape: 'cylinder', offset: [0, 0.09, 0], size: [0.075, 0.16, 0.075], color: '#d6d3d1', roughness: 0.95, metalness: 0.02 },
+    { id: 'cardboard_core', shape: 'cylinder', offset: [0, 0.095, 0], size: [0.03, 0.17, 0.03], color: '#78350f', roughness: 0.9, metalness: 0.02 }
+  ],
+  apt_ent_cleaning_supplies_pristine: [
+    { id: 'galvanized_wringer_bucket', shape: 'cylinder', offset: [-0.08, 0.22, 0], size: [0.18, 0.42, 0.18], color: '#94a3b8', roughness: 0.38, metalness: 0.75 },
+    { id: 'wooden_mop_handle', shape: 'cylinder', offset: [0.08, 0.62, 0], size: [0.02, 1.12, 0.02], rotation: [0, 0, -0.14], color: '#92400e', roughness: 0.68, metalness: 0.08 },
+    { id: 'cotton_mop_head', shape: 'cone', offset: [0.14, 0.14, 0], size: [0.14, 0.26, 0.14], color: '#f8fafc', roughness: 0.92, metalness: 0.02 }
+  ],
+  apt_ent_cleaning_supplies_unkempt: [
+    { id: 'crusty_cleaner_bottle', shape: 'cylinder', offset: [-0.12, 0.16, 0.05], size: [0.08, 0.30, 0.08], color: '#65a30d', roughness: 0.78, metalness: 0.1 },
+    { id: 'grimy_mop_handle', shape: 'cylinder', offset: [0.06, 0.58, 0], size: [0.02, 1.08, 0.02], rotation: [0, 0, -0.18], color: '#451a03', roughness: 0.85, metalness: 0.05 },
+    { id: 'dried_grey_mop_head', shape: 'cone', offset: [0.14, 0.14, 0], size: [0.15, 0.26, 0.15], color: '#57534e', roughness: 0.96, metalness: 0.02 }
+  ],
+  apt_bed_alarm_clock_unkempt: [
+    { id: 'clock_housing_cylinder', shape: 'cylinder', offset: [0, 0.13, 0], size: [0.10, 0.09, 0.10], rotation: [Math.PI / 2, 0, 0], color: '#78716c', roughness: 0.65, metalness: 0.55 },
+    { id: 'scratched_dial_face', shape: 'cylinder', offset: [0, 0.13, 0.05], size: [0.085, 0.015, 0.085], rotation: [Math.PI / 2, 0, 0], color: '#d6d3d1', roughness: 0.45, metalness: 0.15 },
+    { id: 'bell_left', shape: 'sphere', offset: [-0.07, 0.23, 0], size: [0.04, 0.04, 0.04], color: '#8a7238', roughness: 0.45, metalness: 0.8 },
+    { id: 'bell_right', shape: 'sphere', offset: [0.07, 0.23, 0], size: [0.04, 0.04, 0.04], color: '#8a7238', roughness: 0.45, metalness: 0.8 }
+  ]
+};
+
+const MODEL_DONOR_1990S_OVERRIDE: Record<string, string> = {
+  apt_kit_toaster_pristine: 'apt_kit_two_slice_toaster_90s',
+  apt_kit_toaster_unkempt: 'apt_kit_two_slice_toaster_90s',
+  apt_kit_dish_rack_pristine: 'apt_kit_plastic_dish_rack_90s',
+  apt_kit_dish_rack_unkempt: 'apt_kit_plastic_dish_rack_90s'
+};
+
+// Populate compositeParts in-place for all 1978 furniture, appliance, lighting, clue_prop, and custom_ai blueprints
+APARTMENT_1978_ORIGINAL_CATALOG_BLUEPRINTS.forEach((bp) => {
+  if (bp.compositeParts && bp.compositeParts.length > 0) return;
+  if (bp.category === 'wall' || bp.category === 'window_wall' || bp.category === 'door' || bp.category === 'secret_wall' || bp.category === 'floor_tile') {
+    return;
+  }
+  if (BESPOKE_1978_COMPOSITE_PARTS[bp.subType]) {
+    bp.compositeParts = BESPOKE_1978_COMPOSITE_PARTS[bp.subType].map((p) => ({
+      ...p,
+      offset: [...p.offset] as [number, number, number],
+      size: [...p.size] as [number, number, number],
+      rotation: p.rotation ? ([...p.rotation] as [number, number, number]) : undefined
+    }));
+    return;
+  }
+
+  const donorSubType =
+    MODEL_DONOR_1990S_OVERRIDE[bp.subType] ||
+    getUpdated1990sVariantSubtype(bp.subType, APARTMENT_1990S_HOTEL_CATALOG_BLUEPRINTS);
+  const donorBp = donorSubType
+    ? APARTMENT_1990S_HOTEL_CATALOG_BLUEPRINTS.find((c) => c.subType === donorSubType)
+    : undefined;
+
+  if (donorBp && donorBp.compositeParts && donorBp.compositeParts.length > 0) {
+    const [bw, bh, bd] = bp.defaultDimensions;
+    const [dw, dh, dd] = donorBp.defaultDimensions;
+    const sx = dw > 0.01 ? bw / dw : 1;
+    const sy = dh > 0.01 ? bh / dh : 1;
+    const sz = dd > 0.01 ? bd / dd : 1;
+    const isUnkempt = bp.conditionVariant === 'unkempt' || bp.subType.endsWith('_unkempt');
+
+    bp.compositeParts = donorBp.compositeParts.map((part, idx) => ({
+      ...part,
+      offset: [
+        Number((part.offset[0] * sx).toFixed(3)),
+        Number((part.offset[1] * sy).toFixed(3)),
+        Number((part.offset[2] * sz).toFixed(3))
+      ],
+      size: [
+        Number(Math.max(0.01, part.size[0] * sx).toFixed(3)),
+        Number(Math.max(0.01, part.size[1] * sy).toFixed(3)),
+        Number(Math.max(0.01, part.size[2] * sz).toFixed(3))
+      ],
+      rotation: part.rotation ? ([...part.rotation] as [number, number, number]) : undefined,
+      color: idx === 0 ? bp.defaultColor || part.color : part.color,
+      roughness: isUnkempt ? Math.min(0.96, part.roughness + 0.16) : part.roughness
+    }));
+  }
+});
+
 export const APARTMENT_BUILDING_CATALOG_BLUEPRINTS: ApartmentAssetBlueprint[] = [
   ...APARTMENT_1978_ORIGINAL_CATALOG_BLUEPRINTS,
   ...APARTMENT_1990S_HOTEL_CATALOG_BLUEPRINTS

@@ -42,7 +42,8 @@ import {
   STUDIO_DARK_UI_WHITE_CANVAS_SPEC,
   computeBuildPlacementPosition,
   DEFAULT_SNAP_GRID_SIZE,
-  isInvisibleTriggerAsset
+  isInvisibleTriggerAsset,
+  computeCharacterCreatorWheelZoom
 } from '../game/rules';
 import {
   buildAssetMeshGroup,
@@ -104,6 +105,7 @@ interface HotelViewport3DProps {
   onSelectedAgentScreenPosition?: (pos: { x: number; y: number } | null) => void;
   onPlayerPositionStep?: (pos: [number, number, number], floor: FloorId) => void;
   lightingEnabled?: boolean;
+  onChangeCharacterAppearance?: (next: CharacterAppearance) => void;
 }
 
 // Pre-allocated scratch math helpers outside the animation loop (Zero GC)
@@ -158,7 +160,9 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
   onHoverAsset,
   onMoveSelectedAgentTo,
   onSelectedAgentScreenPosition,
-  onPlayerPositionStep
+  onPlayerPositionStep,
+  lightingEnabled = true,
+  onChangeCharacterAppearance
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [marqueeBox, setMarqueeBox] = useState<{
@@ -225,7 +229,9 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
     onHoverAsset,
     onMoveSelectedAgentTo,
     onSelectedAgentScreenPosition,
-    onPlayerPositionStep
+    onPlayerPositionStep,
+    lightingEnabled,
+    onChangeCharacterAppearance
   });
 
   useEffect(() => {
@@ -271,7 +277,9 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
       onHoverAsset,
       onMoveSelectedAgentTo,
       onSelectedAgentScreenPosition,
-      onPlayerPositionStep
+      onPlayerPositionStep,
+      lightingEnabled,
+      onChangeCharacterAppearance
     };
   });
 
@@ -322,10 +330,12 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
     mode
   ]);
 
-  // Rebuild Character Studio preview when appearance changes
+  // Rebuild Character Studio preview when appearance geometry changes (ignoring cameraZoom)
+  const { cameraZoom: _ignoredCameraZoom, ...characterGeometryAppearance } = customCharacterAppearance;
+  const characterGeometryKey = JSON.stringify(characterGeometryAppearance);
   useEffect(() => {
     sceneObjectsRef.current?.rebuildCharacterPreview?.();
-  }, [customCharacterAppearance, mode]);
+  }, [characterGeometryKey, mode]);
 
   useEffect(() => {
     const container = mountRef.current;
@@ -1510,6 +1520,18 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
     const onWheel = (e: WheelEvent) => {
       if (stateRef.current.mode === 'architect') {
         architectOrbit.radius = Math.max(4, Math.min(95, architectOrbit.radius + e.deltaY * 0.015));
+      } else if (stateRef.current.mode === 'character') {
+        const nextZoom = computeCharacterCreatorWheelZoom(
+          stateRef.current.customCharacterAppearance.cameraZoom,
+          e.deltaY,
+          e.deltaMode
+        );
+        const nextAppearance: CharacterAppearance = {
+          ...stateRef.current.customCharacterAppearance,
+          cameraZoom: nextZoom
+        };
+        stateRef.current.customCharacterAppearance = nextAppearance;
+        stateRef.current.onChangeCharacterAppearance?.(nextAppearance);
       }
     };
 
@@ -1576,7 +1598,8 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
       const st = stateRef.current;
 
       if (st.mode === 'character') {
-        camera.position.set(0, 1.22, 3.45);
+        const zoomDist = st.customCharacterAppearance.cameraZoom ?? 3.45;
+        camera.position.set(0, 1.22 * (zoomDist / 3.45), zoomDist);
         camera.lookAt(0, 0.68, 0);
         if (!isPointerDown) {
           charPreviewRotation += dt * 0.35;

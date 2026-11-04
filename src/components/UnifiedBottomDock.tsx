@@ -40,7 +40,8 @@ import {
   AssetConditionVariant,
   SNAP_GRID_SIZE_OPTIONS,
   DEFAULT_SNAP_GRID_SIZE,
-  safeExecuteCatalogOrVariantCallback
+  safeExecuteCatalogOrVariantCallback,
+  generateTopDownRoomBlueprintPreview
 } from '../game/rules';
 import { AssetBlueprint } from '../game/hotelData';
 import {
@@ -91,9 +92,11 @@ interface UnifiedBottomDockProps {
   snapGridSize?: number;
   onChangeSnapGridSize?: (size: number) => void;
   onSwapConditionVariant?: (variant: AssetConditionVariant) => void;
+  onApplyRenovationTheme?: (theme: AssetConditionVariant) => void;
   onSwapVisualDesign?: (targetSubType: string | 'next') => void;
   // Room Blueprints Library Props
   roomBlueprints: RoomBlueprint[];
+  recentRoomBlueprintIds?: string[];
   onSaveRoomBlueprint: (
     name: string,
     description: string,
@@ -192,8 +195,10 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
   snapGridSize = DEFAULT_SNAP_GRID_SIZE,
   onChangeSnapGridSize,
   onSwapConditionVariant,
+  onApplyRenovationTheme,
   onSwapVisualDesign,
   roomBlueprints,
+  recentRoomBlueprintIds,
   onSaveRoomBlueprint,
   onUpdateRoomBlueprint,
   onUpdateCatalogBlueprint,
@@ -228,7 +233,8 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
   onExportAssetSet,
   onResetRoom
 }) => {
-  const [architectTab, setArchitectTab] = useState<'catalog' | 'sets' | 'ai3d' | 'texture' | 'lore' | 'models'>('catalog');
+  const [architectTab, setArchitectTab] = useState<'catalog' | 'sets' | 'blueprints' | 'ai3d'>('catalog');
+  const [activeRenovationTheme, setActiveRenovationTheme] = useState<AssetConditionVariant | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
   const [capabilityFilter, setCapabilityFilter] = useState<CatalogCapabilityFilter>('all');
   const [sortBy, setSortBy] = useState<CatalogSortMode>('relevance');
@@ -308,12 +314,40 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
 
   const catalogTagCounts = collectBlueprintTagCounts(catalogAssets).slice(0, 8);
   const roomBlueprintTagCounts = collectBlueprintTagCounts(roomBlueprints).slice(0, 6);
+  const recentRoomBlueprints = React.useMemo(() => {
+    const idSet = recentRoomBlueprintIds || [];
+    const map = new Map(roomBlueprints.map((bp) => [bp.id, bp]));
+    const result: RoomBlueprint[] = [];
+    for (const id of idSet) {
+      const bp = map.get(id);
+      if (bp) result.push(bp);
+    }
+    if (result.length === 0) {
+      return roomBlueprints.slice(0, 3);
+    }
+    return result.slice(0, 4);
+  }, [roomBlueprints, recentRoomBlueprintIds]);
+
   const filteredRoomBlueprints = searchAndFilterRoomBlueprints(
     roomBlueprints,
     roomBpSearchQuery,
     activeRoomBpTags,
     roomSizeFilter
   );
+
+  const handleSelectRenovationTheme = (theme: AssetConditionVariant) => {
+    setActiveRenovationTheme(theme);
+    onApplyRenovationTheme?.(theme);
+    setActiveCatalogTags((prev) => {
+      const cleaned = prev.filter(
+        (t) => t !== 'pristine' && t !== 'unkempt' && t !== 'updated' && t !== '1990s'
+      );
+      if (theme === 'updated') {
+        return [...cleaned, '1990s'];
+      }
+      return [...cleaned, theme];
+    });
+  };
 
   const handleToggleCatalogTagFilter = (tag: string) => {
     setActiveCatalogTags((prev) =>
@@ -493,412 +527,6 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
             </div>
           </StudioWindowFrame>
 
-          {/* 2. ROOM BLUEPRINTS LIBRARY WINDOW (Save, Tag, Search & Load Entire Room Layouts as JSON) */}
-          <StudioWindowFrame
-            windowState={windows.blueprints || createDefaultStudioWindows().blueprints}
-            badgeText={`${filteredRoomBlueprints.length}/${roomBlueprints.length} Saved`}
-            onFocus={onFocusWindow}
-            onMove={onMoveWindow}
-            onResize={onResizeWindow}
-            onToggleMinimize={onToggleMinimizeWindow}
-            onToggleMaximize={onToggleMaximizeWindow}
-            onClose={onCloseWindow}
-          >
-            <div className="flex flex-col gap-1.5 text-xs">
-              {/* Save Current Room / Selection as Blueprint with Custom Blueprint Tags */}
-              <div className="bg-[#f0f9ff] border border-[#bae6fd] rounded-2xl p-2 space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-extrabold text-[#0369a1]">
-                    Save Room Layout + Tags
-                  </span>
-                  <span className="text-[9px] font-mono text-slate-500">
-                    Floor: {floorAssets.length} objs
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-1">
-                  <input
-                    type="text"
-                    value={bpName}
-                    onChange={(e) => setBpName(e.target.value)}
-                    aria-label="Room Blueprint Name"
-                    placeholder="Blueprint name..."
-                    className="w-full bg-white border border-sky-200 rounded-full px-2 py-0.5 text-[11px] font-bold text-slate-800"
-                  />
-                  <input
-                    type="text"
-                    data-testid="room-blueprint-tags-input"
-                    value={bpTagsInput}
-                    onChange={(e) => setBpTagsInput(e.target.value)}
-                    aria-label="Room Blueprint Tags"
-                    placeholder="Tags: lobby, late-70s"
-                    className="w-full bg-white border border-sky-200 rounded-full px-2 py-0.5 text-[10px] font-mono text-slate-700"
-                  />
-                </div>
-                <input
-                  type="text"
-                  value={bpDescription}
-                  onChange={(e) => setBpDescription(e.target.value)}
-                  aria-label="Room Blueprint Description"
-                  placeholder="Short description of room layout..."
-                  className="w-full bg-white border border-sky-200 rounded-full px-2 py-0.5 text-[10px] text-slate-700"
-                />
-                <div className="grid grid-cols-2 gap-1 pt-0.5">
-                  <button
-                    type="button"
-                    disabled={floorAssets.length === 0}
-                    onClick={() =>
-                      onSaveRoomBlueprint(
-                        bpName,
-                        bpDescription,
-                        false,
-                        parseBlueprintTagsInput(bpTagsInput)
-                      )
-                    }
-                    className="py-1 px-2 bg-gradient-to-r from-[#10b981] to-[#059669] hover:from-[#059669] hover:to-[#047857] disabled:opacity-40 text-white font-bold rounded-full text-[10px] shadow-2xs"
-                  >
-                    + Save Floor ({floorAssets.length})
-                  </button>
-                  <button
-                    type="button"
-                    disabled={selectedCount === 0}
-                    onClick={() =>
-                      onSaveRoomBlueprint(
-                        bpName,
-                        bpDescription,
-                        true,
-                        parseBlueprintTagsInput(bpTagsInput)
-                      )
-                    }
-                    className="py-1 px-2 bg-[#0284c7] hover:bg-[#0369a1] disabled:opacity-40 text-white font-bold rounded-full text-[10px] shadow-2xs"
-                  >
-                    + Save Selected ({selectedCount})
-                  </button>
-                </div>
-              </div>
-
-              {/* Search & Tag Filter Bar for Saved Room Blueprints */}
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-1.5 space-y-1">
-                <div className="flex items-center gap-1">
-                  <input
-                    type="text"
-                    data-testid="room-blueprint-search-input"
-                    value={roomBpSearchQuery}
-                    onChange={(e) => setRoomBpSearchQuery(e.target.value)}
-                    aria-label="Search Room Blueprints"
-                    placeholder="Search blueprints by name, object, or #tag..."
-                    className="flex-1 bg-white border border-slate-300 rounded-full px-2.5 py-0.5 text-[10px] text-slate-800"
-                  />
-                  {(roomBpSearchQuery || activeRoomBpTags.length > 0) && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRoomBpSearchQuery('');
-                        setActiveRoomBpTags([]);
-                      }}
-                      className="px-2 py-0.5 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-700 text-[9px] font-bold"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-
-                {roomBlueprintTagCounts.length > 0 && (
-                  <div
-                    data-testid="room-blueprint-tag-filter-bar"
-                    className="flex flex-wrap items-center gap-1"
-                  >
-                    <span className="text-[8px] font-extrabold uppercase tracking-wider text-slate-500">
-                      Tags:
-                    </span>
-                    {roomBlueprintTagCounts.map(({ tag, count }) => {
-                      const active = activeRoomBpTags.includes(tag);
-                      return (
-                        <button
-                          key={tag}
-                          type="button"
-                          onClick={() => handleToggleRoomBpTagFilter(tag)}
-                          className={`px-1.5 py-0.1 rounded-full text-[8px] font-mono font-bold transition-all border ${
-                            active
-                              ? 'bg-[#0284c7] text-white border-[#38bdf8]'
-                              : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-300'
-                          }`}
-                        >
-                          #{tag} ({count})
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Room Size Filter */}
-                <div
-                  data-testid="room-size-filter-bar"
-                  className="flex flex-wrap items-center gap-1 pt-0.5 border-t border-slate-200/60"
-                >
-                  <span className="text-[8px] font-extrabold uppercase tracking-wider text-slate-500">
-                    Size:
-                  </span>
-                  {(['all', 'compact', 'medium', 'large'] as const).map((size) => {
-                    const active = roomSizeFilter === size;
-                    return (
-                      <button
-                        key={size}
-                        type="button"
-                        onClick={() => setRoomSizeFilter(size)}
-                        className={`px-1.5 py-0.1 rounded-full text-[8px] font-mono font-bold capitalize transition-all border ${
-                          active
-                            ? 'bg-[#0284c7] text-white border-[#38bdf8]'
-                            : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-300'
-                        }`}
-                      >
-                        {size === 'compact'
-                          ? 'Compact (<5m)'
-                          : size === 'medium'
-                          ? 'Medium (5-9m)'
-                          : size === 'large'
-                          ? 'Large (>9m)'
-                          : 'All Sizes'}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="flex items-center justify-between text-[10px] pt-0.5 border-t border-slate-200">
-                  <label className="flex items-center gap-1 text-[10px] text-slate-600 cursor-pointer truncate">
-                    <input
-                      type="checkbox"
-                      checked={replaceFloorOnLoad}
-                      onChange={(e) => setReplaceFloorOnLoad(e.target.checked)}
-                      className="rounded accent-[#0284c7]"
-                    />
-                    <span>Replace floor</span>
-                  </label>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <span className="font-bold text-slate-500">Offset X,Z:</span>
-                    <input
-                      type="number"
-                      aria-label="Blueprint Load Offset X"
-                      step={0.5}
-                      value={bpOffsetX}
-                      onChange={(e) => setBpOffsetX(parseFloat(e.target.value) || 0)}
-                      className="w-10 bg-white border border-slate-300 rounded-lg px-1 py-0.2 text-[10px] font-mono text-center"
-                    />
-                    <input
-                      type="number"
-                      aria-label="Blueprint Load Offset Z"
-                      step={0.5}
-                      value={bpOffsetZ}
-                      onChange={(e) => setBpOffsetZ(parseFloat(e.target.value) || 0)}
-                      className="w-10 bg-white border border-slate-300 rounded-lg px-1 py-0.2 text-[10px] font-mono text-center"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Saved Room Blueprints List with Tag Chips & Inline Tag Editor */}
-              <div className="space-y-1.5" data-testid="room-blueprints-list">
-                {filteredRoomBlueprints.map((bp) => {
-                  const inlineTagVal = roomBpInlineTagDrafts[bp.id] || '';
-                  return (
-                    <div
-                      key={bp.id}
-                      className="bg-white border border-slate-200 hover:border-[#38bdf8] rounded-2xl p-2 shadow-2xs space-y-1 transition-all"
-                    >
-                      <div className="flex items-start justify-between gap-1">
-                        <div>
-                          <div className="text-[11px] font-extrabold text-slate-800">{bp.name}</div>
-                          <div className="text-[9px] text-slate-500 leading-snug line-clamp-1">
-                            {bp.description}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-bold">
-                            {bp.items.length} objs · {bp.boundingSize[0]}×{bp.boundingSize[1]}m
-                          </span>
-                          {onUpdateRoomBlueprint && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setRoomBpTagEditorOpenId(
-                                  roomBpTagEditorOpenId === bp.id ? null : bp.id
-                                )
-                              }
-                              className="px-1.5 py-0.2 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-700 text-[9px] font-bold"
-                              title="Manage Custom Tags"
-                            >
-                              {roomBpTagEditorOpenId === bp.id ? 'Close' : '🏷️ Tags'}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {roomBpTagEditorOpenId === bp.id && onUpdateRoomBlueprint && (
-                        <div
-                          data-testid={`room-bp-tag-manager-${bp.id}`}
-                          className="bg-slate-50 border border-slate-200 rounded-xl p-1.5 space-y-1 mt-1"
-                        >
-                          <div className="text-[9px] font-extrabold text-slate-700">
-                            Quick Category Tags (Click to toggle):
-                          </div>
-                          <div className="flex flex-wrap gap-1">
-                            {[
-                              'lobby',
-                              'bedroom',
-                              'suite',
-                              'parlor',
-                              'corridor',
-                              'basement',
-                              'office',
-                              'reception',
-                              'kitchenette',
-                              'bathroom',
-                              'archive'
-                            ].map((preset) => {
-                              const hasTag = (bp.tags || []).includes(preset);
-                              return (
-                                <button
-                                  key={preset}
-                                  type="button"
-                                  onClick={() => {
-                                    if (hasTag) {
-                                      onUpdateRoomBlueprint(removeTagFromBlueprint(bp, preset));
-                                    } else {
-                                      onUpdateRoomBlueprint(addTagToBlueprint(bp, preset));
-                                    }
-                                  }}
-                                  className={`px-1.5 py-0.5 rounded-full text-[8px] font-mono font-bold transition-all border ${
-                                    hasTag
-                                      ? 'bg-emerald-600 text-white border-emerald-500'
-                                      : 'bg-white hover:bg-slate-100 text-slate-600 border-slate-300'
-                                  }`}
-                                >
-                                  {hasTag ? `✓ #${preset}` : `+ #${preset}`}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Room Blueprint Tag Chips & Inline Add Tag */}
-                      <div className="flex flex-wrap items-center gap-1">
-                        {(bp.tags || []).map((tag) => (
-                          <span
-                            key={tag}
-                            className="inline-flex items-center gap-0.5 px-1.5 py-0.1 rounded-full bg-slate-100 border border-slate-300 text-slate-700 text-[8px] font-mono font-semibold"
-                          >
-                            <button
-                              type="button"
-                              onClick={() => handleToggleRoomBpTagFilter(tag)}
-                              title={`Filter Room Blueprints by #${tag}`}
-                              className="hover:underline"
-                            >
-                              #{tag}
-                            </button>
-                            {onUpdateRoomBlueprint && (
-                              <button
-                                type="button"
-                                aria-label={`Remove tag ${tag} from ${bp.name}`}
-                                onClick={() =>
-                                  onUpdateRoomBlueprint(removeTagFromBlueprint(bp, tag))
-                                }
-                                className="ml-0.5 text-slate-400 hover:text-rose-600 font-bold"
-                              >
-                                ×
-                              </button>
-                            )}
-                          </span>
-                        ))}
-                        {onUpdateRoomBlueprint && (
-                          <div className="inline-flex items-center gap-0.5">
-                            <input
-                              type="text"
-                              value={inlineTagVal}
-                              onChange={(e) =>
-                                setRoomBpInlineTagDrafts((prev) => ({
-                                  ...prev,
-                                  [bp.id]: e.target.value
-                                }))
-                              }
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' && inlineTagVal.trim()) {
-                                  e.preventDefault();
-                                  onUpdateRoomBlueprint(addTagToBlueprint(bp, inlineTagVal));
-                                  setRoomBpInlineTagDrafts((prev) => ({ ...prev, [bp.id]: '' }));
-                                }
-                              }}
-                              aria-label={`Add tag to ${bp.name}`}
-                              placeholder="+tag"
-                              className="w-12 bg-slate-50 border border-slate-300 rounded-full px-1.5 py-0.1 text-[8px] font-mono text-slate-700"
-                            />
-                            {inlineTagVal.trim() && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  onUpdateRoomBlueprint(addTagToBlueprint(bp, inlineTagVal));
-                                  setRoomBpInlineTagDrafts((prev) => ({ ...prev, [bp.id]: '' }));
-                                }}
-                                className="px-1.5 py-0.1 rounded-full bg-[#0284c7] text-white text-[8px] font-bold"
-                              >
-                                +
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-1 pt-0.5">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onLoadRoomBlueprint(bp, bpOffsetX, bpOffsetZ, replaceFloorOnLoad)
-                          }
-                          className="flex-1 py-0.5 px-2 bg-[#0284c7] hover:bg-[#0369a1] text-white font-bold rounded-full text-[10px]"
-                        >
-                          Load Room Blueprint
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onExportRoomBlueprint(bp)}
-                          title="Export this Room Blueprint as JSON"
-                          className="py-0.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-full text-[9px]"
-                        >
-                          .json
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onDeleteRoomBlueprint(bp.id)}
-                          title="Remove Blueprint from Library"
-                          className="py-0.5 px-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-full text-[9px]"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Export / Import Entire Room Blueprint JSON Library */}
-              <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={onExportAllRoomBlueprints}
-                  className="py-1 px-2 bg-[#e0f2fe] hover:bg-[#bae6fd] text-[#0369a1] font-bold rounded-full text-[10px]"
-                >
-                  Export Library (.json)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => blueprintFileInputRef.current?.click()}
-                  className="py-1 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-full text-[10px]"
-                >
-                  Import Blueprint JSON
-                </button>
-              </div>
-            </div>
-          </StudioWindowFrame>
-
           {/* 3. BUILD MODE TOOLS WINDOW */}
           <StudioWindowFrame
             windowState={windows.tools || createDefaultStudioWindows().tools}
@@ -916,7 +544,7 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                 value={architectTab}
                 onChange={(e) => {
                   e.currentTarget.blur();
-                  const nextTab = e.target.value as 'catalog' | 'sets' | 'ai3d' | 'texture' | 'lore' | 'models';
+                  const nextTab = e.target.value as 'catalog' | 'sets' | 'blueprints' | 'ai3d';
                   setArchitectTab(nextTab);
                   onOpenWindow?.('catalog');
                   onFocusWindow('catalog');
@@ -925,10 +553,8 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
               >
                 <option value="catalog">📦 Build Mode Visual Catalog ({catalogAssets.length})</option>
                 <option value="sets">📚 Saved Asset Sets ({assetSets.length} Sets · Separate from Blueprints)</option>
-                <option value="ai3d">✨ Meshy.ai Image-to-3D &amp; Google 3D Forge</option>
-                <option value="texture">🎨 Google Flash-Lite Surface Textures</option>
-                <option value="lore">📐 In-Game Scale Reference (Flash Low)</option>
-                <option value="models">⚡ Fast Google + Meshy AI Models</option>
+                <option value="blueprints">📐 Room Blueprints ({roomBlueprints.length} Saved)</option>
+                <option value="ai3d">✨ AI Asset Gen (Meshy 3D, Flash-Lite Texture &amp; Scale Ref)</option>
               </select>
 
               <button
@@ -1441,7 +1067,7 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                       className={`px-2 py-0.2 rounded-full text-[9px] font-bold border transition-all ${
                         setEraFilter === '1990s'
                           ? 'bg-teal-700 text-white border-teal-500'
-                          : 'bg-teal-50 hover:bg-teal-100 text-teal-900 border-teal-200'
+                          : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
                       }`}
                     >
                       🏨 1990s Hotel Updated (5)
@@ -1452,11 +1078,11 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                       onClick={() => setSetEraFilter('1978')}
                       className={`px-2 py-0.2 rounded-full text-[9px] font-bold border transition-all ${
                         setEraFilter === '1978'
-                          ? 'bg-amber-800 text-white border-amber-600'
-                          : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200'
+                          ? 'bg-[#0284c7] text-white border-[#38bdf8]'
+                          : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
                       }`}
                     >
-                      🏢 1978 Original Apartment
+                      🏢 1978 Apartment
                     </button>
                     <button
                       type="button"
@@ -1465,7 +1091,7 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                       className={`px-2 py-0.2 rounded-full text-[9px] font-bold border transition-all ${
                         setEraFilter === 'custom'
                           ? 'bg-emerald-700 text-white border-emerald-500'
-                          : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-200'
+                          : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
                       }`}
                     >
                       ✨ Custom Sets
@@ -1648,7 +1274,7 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                     </span>
                   </div>
 
-                  {/* Renovation / Era Filter Chips */}
+                  {/* Renovation Theme Selection Bar ("78's Pristine", "70's Unkempt", "90's Updated") */}
                   <div
                     data-testid="catalog-renovation-filter-bar"
                     className="flex flex-wrap items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl px-2 py-0.5"
@@ -1658,15 +1284,42 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                     </span>
                     <button
                       type="button"
-                      data-testid="filter-era-1990s-btn"
-                      onClick={() => handleToggleCatalogTagFilter('1990s')}
+                      data-testid="renovation-theme-pristine-btn"
+                      onClick={() => handleSelectRenovationTheme('pristine')}
+                      title="Switch all assets to 78's Pristine condition and filter catalog"
                       className={`px-1.5 py-0.1 rounded-full text-[8px] font-bold border transition-all ${
-                        activeCatalogTags.includes('1990s')
-                          ? 'bg-teal-700 text-white border-teal-500'
-                          : 'bg-teal-50 hover:bg-teal-100 text-teal-900 border-teal-200'
+                        activeRenovationTheme === 'pristine'
+                          ? 'bg-emerald-700 text-white border-emerald-500 shadow-2xs'
+                          : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
                       }`}
                     >
-                      🏨 1990s Hotel Updated
+                      78&apos;s Pristine
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="renovation-theme-unkempt-btn"
+                      onClick={() => handleSelectRenovationTheme('unkempt')}
+                      title="Switch all assets to 70's Unkempt condition and filter catalog"
+                      className={`px-1.5 py-0.1 rounded-full text-[8px] font-bold border transition-all ${
+                        activeRenovationTheme === 'unkempt'
+                          ? 'bg-slate-800 text-white border-slate-600 shadow-2xs'
+                          : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                      }`}
+                    >
+                      70&apos;s Unkempt
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="renovation-theme-updated-btn"
+                      onClick={() => handleSelectRenovationTheme('updated')}
+                      title="Switch all assets to 90's Updated renovation theme and filter catalog"
+                      className={`px-1.5 py-0.1 rounded-full text-[8px] font-bold border transition-all ${
+                        activeRenovationTheme === 'updated'
+                          ? 'bg-teal-700 text-white border-teal-500 shadow-2xs'
+                          : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                      }`}
+                    >
+                      90&apos;s Updated
                     </button>
                     <button
                       type="button"
@@ -1674,24 +1327,33 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                       onClick={() => handleToggleCatalogTagFilter('1978')}
                       className={`px-1.5 py-0.1 rounded-full text-[8px] font-bold border transition-all ${
                         activeCatalogTags.includes('1978')
-                          ? 'bg-amber-800 text-white border-amber-600'
-                          : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200'
+                          ? 'bg-[#0284c7] text-white border-[#38bdf8]'
+                          : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
                       }`}
                     >
-                      🕰️ 1978 Apartment
+                      1978 Apartment
                     </button>
-                    <button
-                      type="button"
-                      data-testid="filter-era-structural-btn"
-                      onClick={() => handleToggleCatalogTagFilter('structural_fixed')}
-                      className={`px-1.5 py-0.1 rounded-full text-[8px] font-bold border transition-all ${
-                        activeCatalogTags.includes('structural_fixed')
-                          ? 'bg-slate-700 text-white border-slate-500'
-                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
-                      }`}
-                    >
-                      🔒 Structural Fixed
-                    </button>
+                    {activeRenovationTheme && (
+                      <button
+                        type="button"
+                        data-testid="renovation-theme-all-btn"
+                        onClick={() => {
+                          setActiveRenovationTheme(null);
+                          setActiveCatalogTags((prev) =>
+                            prev.filter(
+                              (t) =>
+                                t !== 'pristine' &&
+                                t !== 'unkempt' &&
+                                t !== 'updated' &&
+                                t !== '1990s'
+                            )
+                          );
+                        }}
+                        className="px-1.5 py-0.1 rounded-full text-[8px] font-bold bg-slate-200 hover:bg-slate-300 text-slate-700"
+                      >
+                        Show All
+                      </button>
+                    )}
                   </div>
 
                   {/* Interactive Blueprint Tag Filter Chips (Compact Single-Line Scroll/Wrap) */}
@@ -1767,7 +1429,7 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                             type="button"
                             onClick={() => {
                               setTexPrompt(`${activeBlueprint.name} — ${activeBlueprint.description || ''}`);
-                              setArchitectTab('texture');
+                              setArchitectTab('ai3d');
                             }}
                             title="Use this item description to synthesize a concept/texture image"
                             className="px-1.5 py-0.2 rounded-full bg-white hover:bg-slate-100 border border-slate-300 text-[8px] font-bold text-slate-700"
@@ -1973,268 +1635,232 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
               )}
 
               {architectTab === 'ai3d' && (
-                <div className="flex flex-col gap-2 pr-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-extrabold text-[#0369a1]">
-                      Meshy.ai Image-to-3D + Google Flash-Lite 3D Forge
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[#047857] text-[9px] font-extrabold">
-                      meshy-4-image-to-3d + gemini-3.1-flash-lite
-                    </span>
-                  </div>
-
-                  <input
-                    type="text"
-                    value={ai3DPrompt}
-                    onChange={(e) => setAi3DPrompt(e.target.value)}
-                    aria-label="Describe 3D Object to Generate"
-                    placeholder="Describe any furniture, appliance, or architectural prop..."
-                    className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3 py-1.5 text-xs text-slate-800"
-                  />
-
-                  {/* Optional Reference Image for Meshy.ai Image-to-3D */}
-                  <div className="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-2.5 py-1.5">
-                    <input
-                      ref={meshyImageInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        const reader = new FileReader();
-                        reader.onload = () => {
-                          setMeshyRefImageUrl(String(reader.result || ''));
-                        };
-                        reader.readAsDataURL(file);
-                        e.target.value = '';
-                      }}
-                      className="hidden"
-                    />
-                    <div className="flex items-center gap-2 min-w-0">
-                      {meshyRefImageUrl ? (
-                        <img
-                          src={meshyRefImageUrl}
-                          alt="Meshy Reference"
-                          className="w-8 h-8 rounded-lg border border-slate-300 object-cover shrink-0"
-                        />
-                      ) : (
-                        <div className="w-8 h-8 rounded-lg bg-sky-100 text-[#0369a1] flex items-center justify-center text-xs font-bold shrink-0">
-                          3D
-                        </div>
-                      )}
-                      <div className="min-w-0">
-                        <div className="text-[10px] font-extrabold text-slate-700 truncate">
-                          {meshyRefImageUrl
-                            ? 'Reference Image Attached for Meshy.ai Image-to-3D'
-                            : 'Meshy.ai Image-to-3D Reference (Optional)'}
-                        </div>
-                        <div className="text-[9px] text-slate-500 truncate">
-                          Upload an image or attach a Google Flash-Lite synthesized image
-                        </div>
-                      </div>
+                <div
+                  data-testid="ai-asset-gen-unified-panel"
+                  className="flex flex-col gap-3 pr-1"
+                >
+                  {/* 1. Meshy.ai Image-to-3D + Google Flash-Lite 3D Forge */}
+                  <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-2.5 flex flex-col gap-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-extrabold text-[#0369a1]">
+                        1 · Meshy Image-to-3D &amp; 3D Mesh Forge
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[#047857] text-[9px] font-extrabold">
+                        meshy-4-image-to-3d + gemini-3.1-flash-lite
+                      </span>
                     </div>
 
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => meshyImageInputRef.current?.click()}
-                        className="px-2 py-1 rounded-full bg-white hover:bg-slate-100 border border-slate-300 text-[10px] font-bold text-slate-700"
-                      >
-                        Upload Image
-                      </button>
-                      {customGeneratedTexUrl && (
-                        <button
-                          type="button"
-                          onClick={() => setMeshyRefImageUrl(customGeneratedTexUrl)}
-                          className="px-2 py-1 rounded-full bg-[#e0f2fe] hover:bg-[#bae6fd] text-[#0369a1] text-[10px] font-bold"
-                        >
-                          Use Texture
-                        </button>
-                      )}
-                      {meshyRefImageUrl && (
-                        <button
-                          type="button"
-                          onClick={() => setMeshyRefImageUrl(null)}
-                          className="px-1.5 py-1 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-600 text-[10px] font-bold"
-                        >
-                          ×
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-1.5 py-0.5">
-                    <span className="text-[10px] font-bold text-slate-500">Quick Presets:</span>
-                    {[
-                      "Investigator's Leather Notebook & Fountain Pen",
-                      '1978 Microcassette Dictaphone & Tape Recorder',
-                      '1970s Chrome D-Cell & UV Inspection Flashlight',
-                      "Investigator's Evidence Corkboard & Red Yarn",
-                      'Brass Master Skeleton Keyring & Room Tags',
-                      'Retrofitted Window AC & Conduit Box',
-                      'Piecemeal Resident Hotplate & Kitchenette',
-                      'Decade-Lived-In Steamer Trunk & Keepsakes',
-                      '90s CRT Hotel TV with Built-in VHS',
-                      'Porcelain Clawfoot Hotel Bathtub'
-                    ].map((p) => (
-                      <button
-                        key={p}
-                        type="button"
-                        onClick={() => setAi3DPrompt(p)}
-                        className="px-2 py-0.5 rounded-full bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 border border-slate-200 text-[10px] font-semibold text-slate-700 transition-colors"
-                      >
-                        {p}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={aiForgeBusy}
-                      onClick={async () => {
-                        await onGenerateAI3DAsset(ai3DPrompt, meshyRefImageUrl);
-                        setArchitectTab('catalog');
-                      }}
-                      className="px-4 py-1.5 bg-gradient-to-r from-[#10b981] to-[#059669] hover:from-[#059669] hover:to-[#047857] disabled:opacity-50 text-white font-bold rounded-full text-xs shadow-xs"
-                    >
-                      {aiForgeBusy
-                        ? 'Forging 3D Mesh...'
-                        : meshyRefImageUrl
-                        ? 'Run Meshy Image-to-3D & Add to Catalog'
-                        : 'Generate 3D Mesh & Add to Catalog'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setArchitectTab('catalog')}
-                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-full text-xs"
-                    >
-                      Back to Catalog
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {architectTab === 'texture' && (
-                <div className="flex flex-col gap-2 pr-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-extrabold text-[#0369a1]">
-                      Google Flash-Lite Surface &amp; Reference Image Synthesizer
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full bg-sky-50 border border-sky-200 text-[#0369a1] text-[9px] font-extrabold">
-                      gemini-3.1-flash-lite-image
-                    </span>
-                  </div>
-                  <input
-                    type="text"
-                    value={texPrompt}
-                    onChange={(e) => setTexPrompt(e.target.value)}
-                    aria-label="Describe Surface Texture"
-                    placeholder="Describe seamless brick, wood, carpet, or 3D reference image..."
-                    className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3 py-1.5 text-xs text-slate-800"
-                  />
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={aiForgeBusy}
-                      onClick={() => onGenerateCustomTexture(texPrompt)}
-                      className="px-4 py-1.5 bg-[#0284c7] hover:bg-[#0369a1] disabled:opacity-50 text-white font-bold rounded-full text-xs"
-                    >
-                      {aiForgeBusy ? 'Synthesizing...' : 'Synthesize with Flash-Lite Image'}
-                    </button>
-                    {customGeneratedTexUrl && (
-                      <>
-                        <img
-                          src={customGeneratedTexUrl}
-                          alt="Synthesized Texture"
-                          className="w-9 h-9 rounded-xl border border-slate-300 object-cover"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMeshyRefImageUrl(customGeneratedTexUrl);
-                            setArchitectTab('ai3d');
-                          }}
-                          className="px-2.5 py-1 bg-[#ecfdf5] hover:bg-[#d1fae5] text-[#047857] border border-[#a7f3d0] rounded-full text-[10px] font-extrabold"
-                        >
-                          Send to Meshy Image-to-3D →
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {architectTab === 'lore' && (
-                <div className="flex flex-col gap-2 pr-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-extrabold text-[#0369a1]">
-                      In-Game Architectural Scale &amp; Proportion Reference
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full bg-sky-50 border border-sky-200 text-[#0369a1] text-[9px] font-extrabold">
-                      gemini-3.8-flash (ThinkingLevel.LOW)
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
                     <input
                       type="text"
-                      value={loreQuery}
-                      onChange={(e) => setLoreQuery(e.target.value)}
-                      aria-label="Architectural Reference Query"
-                      className="flex-1 bg-slate-50 border border-slate-300 rounded-full px-3 py-1 text-xs text-slate-800"
+                      value={ai3DPrompt}
+                      onChange={(e) => setAi3DPrompt(e.target.value)}
+                      aria-label="Describe 3D Object to Generate"
+                      placeholder="Describe any furniture, appliance, or architectural prop..."
+                      className="w-full bg-white border border-slate-300 rounded-2xl px-3 py-1.5 text-xs text-slate-800"
                     />
-                    <button
-                      type="button"
-                      disabled={aiForgeBusy}
-                      onClick={() => onResearchNycLore(loreQuery)}
-                      className="px-3 py-1 bg-[#0284c7] text-white font-bold rounded-full text-xs"
-                    >
-                      Check Scale
-                    </button>
-                  </div>
-                  {loreSummary && (
-                    <div className="text-[11px] text-slate-600 bg-slate-100 rounded-2xl px-3 py-1.5">
-                      {loreSummary}
-                    </div>
-                  )}
-                </div>
-              )}
 
-              {architectTab === 'models' && (
-                <div data-testid="ai-model-compliance-panel" className="flex flex-col gap-1.5 pr-1">
-                  <div className="flex items-center justify-between bg-[#ecfdf5] border border-[#a7f3d0] rounded-2xl px-2.5 py-1.5">
-                    <span className="text-[11px] font-extrabold text-[#065f46]">
-                      ⚡ High-Speed Google Gemini + Meshy.ai Stack
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full bg-[#10b981] text-white text-[9px] font-extrabold">
-                      100% Verified
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-1.5 text-[10px]">
-                    {Object.values(AI_MODEL_REGISTRY).map((spec) => (
-                      <div
-                        key={spec.taskKey}
-                        className="bg-slate-50 border border-slate-200 rounded-xl p-1.5 flex flex-col gap-0.5"
-                      >
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="font-extrabold text-slate-800 truncate">
-                            {spec.taskLabel}
-                          </span>
-                          <span
-                            className={`px-1.5 py-0.2 rounded-full text-[8px] font-extrabold shrink-0 ${
-                              spec.provider === 'Meshy.ai'
-                                ? 'bg-amber-100 text-amber-900'
-                                : 'bg-[#e0f2fe] text-[#0369a1]'
-                            }`}
-                          >
-                            {spec.provider}
-                          </span>
-                        </div>
-                        <div className="font-mono text-[9px] font-bold text-[#059669]">
-                          {spec.modelId}
+                    {/* Optional Reference Image for Meshy.ai Image-to-3D */}
+                    <div className="flex items-center justify-between gap-2 bg-white border border-slate-200 rounded-2xl px-2.5 py-1.5">
+                      <input
+                        ref={meshyImageInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = () => {
+                            setMeshyRefImageUrl(String(reader.result || ''));
+                          };
+                          reader.readAsDataURL(file);
+                          e.target.value = '';
+                        }}
+                        className="hidden"
+                      />
+                      <div className="flex items-center gap-2 min-w-0">
+                        {meshyRefImageUrl ? (
+                          <img
+                            src={meshyRefImageUrl}
+                            alt="Meshy Reference"
+                            className="w-8 h-8 rounded-lg border border-slate-300 object-cover shrink-0"
+                          />
+                        ) : (
+                          <div className="w-8 h-8 rounded-lg bg-sky-100 text-[#0369a1] flex items-center justify-center text-xs font-bold shrink-0">
+                            3D
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <div className="text-[10px] font-extrabold text-slate-700 truncate">
+                            {meshyRefImageUrl
+                              ? 'Reference Image Attached for Meshy.ai Image-to-3D'
+                              : 'Meshy.ai Image-to-3D Reference (Optional)'}
+                          </div>
+                          <div className="text-[9px] text-slate-500 truncate">
+                            Upload an image or attach a Google Flash-Lite synthesized image
+                          </div>
                         </div>
                       </div>
-                    ))}
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => meshyImageInputRef.current?.click()}
+                          className="px-2 py-1 rounded-full bg-white hover:bg-slate-100 border border-slate-300 text-[10px] font-bold text-slate-700"
+                        >
+                          Upload Image
+                        </button>
+                        {customGeneratedTexUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setMeshyRefImageUrl(customGeneratedTexUrl)}
+                            className="px-2 py-1 rounded-full bg-[#e0f2fe] hover:bg-[#bae6fd] text-[#0369a1] text-[10px] font-bold"
+                          >
+                            Use Texture
+                          </button>
+                        )}
+                        {meshyRefImageUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setMeshyRefImageUrl(null)}
+                            className="px-1.5 py-1 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-600 text-[10px] font-bold"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5 py-0.5">
+                      <span className="text-[10px] font-bold text-slate-500">Quick Presets:</span>
+                      {[
+                        "Investigator's Leather Notebook & Fountain Pen",
+                        '1978 Microcassette Dictaphone & Tape Recorder',
+                        '1970s Chrome D-Cell & UV Inspection Flashlight',
+                        "Investigator's Evidence Corkboard & Red Yarn",
+                        'Brass Master Skeleton Keyring & Room Tags',
+                        'Retrofitted Window AC & Conduit Box',
+                        'Piecemeal Resident Hotplate & Kitchenette',
+                        'Decade-Lived-In Steamer Trunk & Keepsakes',
+                        '90s CRT Hotel TV with Built-in VHS',
+                        'Porcelain Clawfoot Hotel Bathtub'
+                      ].map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => setAi3DPrompt(p)}
+                          className="px-2 py-0.5 rounded-full bg-white hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 border border-slate-200 text-[10px] font-semibold text-slate-700 transition-colors"
+                        >
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={aiForgeBusy}
+                        onClick={async () => {
+                          await onGenerateAI3DAsset(ai3DPrompt, meshyRefImageUrl);
+                          setArchitectTab('catalog');
+                        }}
+                        className="px-4 py-1.5 bg-gradient-to-r from-[#10b981] to-[#059669] hover:from-[#059669] hover:to-[#047857] disabled:opacity-50 text-white font-bold rounded-full text-xs shadow-xs"
+                      >
+                        {aiForgeBusy
+                          ? 'Forging 3D Mesh...'
+                          : meshyRefImageUrl
+                          ? 'Run Meshy Image-to-3D & Add to Catalog'
+                          : 'Generate 3D Mesh & Add to Catalog'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setArchitectTab('catalog')}
+                        className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-semibold rounded-full text-xs"
+                      >
+                        Back to Catalog
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 2. Flash-Lite Surface & Reference Image Synthesizer */}
+                  <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-2.5 flex flex-col gap-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-extrabold text-[#0369a1]">
+                        2 · Flash-Lite Texture &amp; Reference Image Synthesizer
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-sky-50 border border-sky-200 text-[#0369a1] text-[9px] font-extrabold">
+                        gemini-3.1-flash-lite-image
+                      </span>
+                    </div>
+                    <input
+                      type="text"
+                      value={texPrompt}
+                      onChange={(e) => setTexPrompt(e.target.value)}
+                      aria-label="Describe Surface Texture"
+                      placeholder="Describe seamless brick, wood, carpet, or 3D reference image..."
+                      className="w-full bg-white border border-slate-300 rounded-2xl px-3 py-1.5 text-xs text-slate-800"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={aiForgeBusy}
+                        onClick={() => onGenerateCustomTexture(texPrompt)}
+                        className="px-4 py-1.5 bg-[#0284c7] hover:bg-[#0369a1] disabled:opacity-50 text-white font-bold rounded-full text-xs"
+                      >
+                        {aiForgeBusy ? 'Synthesizing...' : 'Synthesize with Flash-Lite Image'}
+                      </button>
+                      {customGeneratedTexUrl && (
+                        <>
+                          <img
+                            src={customGeneratedTexUrl}
+                            alt="Synthesized Texture"
+                            className="w-9 h-9 rounded-xl border border-slate-300 object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMeshyRefImageUrl(customGeneratedTexUrl);
+                            }}
+                            className="px-2.5 py-1 bg-[#ecfdf5] hover:bg-[#d1fae5] text-[#047857] border border-[#a7f3d0] rounded-full text-[10px] font-extrabold"
+                          >
+                            Attach to Meshy Image-to-3D ↑
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 3. Scale Ref — In-Game Architectural Scale & Proportion Reference */}
+                  <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-2.5 flex flex-col gap-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-extrabold text-[#0369a1]">
+                        3 · Scale Ref — In-Game Architectural Scale &amp; Proportion Reference
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-sky-50 border border-sky-200 text-[#0369a1] text-[9px] font-extrabold">
+                        gemini-3.8-flash (ThinkingLevel.LOW)
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={loreQuery}
+                        onChange={(e) => setLoreQuery(e.target.value)}
+                        aria-label="Architectural Reference Query"
+                        className="flex-1 bg-white border border-slate-300 rounded-full px-3 py-1 text-xs text-slate-800"
+                      />
+                      <button
+                        type="button"
+                        disabled={aiForgeBusy}
+                        onClick={() => onResearchNycLore(loreQuery)}
+                        className="px-3 py-1 bg-[#0284c7] text-white font-bold rounded-full text-xs"
+                      >
+                        Check Scale
+                      </button>
+                    </div>
+                    {loreSummary && (
+                      <div className="text-[11px] text-slate-600 bg-white border border-slate-200 rounded-2xl px-3 py-1.5">
+                        {loreSummary}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
