@@ -4699,4 +4699,83 @@ test('Advanced Lighting Improvements: WebGL PointLight distance culling, 250ms c
   assert.equal(applied.updatedAssets[0].isActivated, true);
 });
 
+test('Architect Forge UI Sketch Specification (Sections A-G): Title Section, Mode Selection, Mode-Specific Feature Buttons, and Build-Mode-Only Floor Selection Window', async () => {
+  const {
+    ARCHITECT_FORGE_UI_LAYOUT_SPEC,
+    MODE_SELECTION_PILL_TABS,
+    getModeFeatureButtons,
+    isFloorSelectionWidgetVisible,
+    formatFloorDiamondCode,
+    stepFloorSelection,
+    removeFloorLayer,
+    INITIAL_FLOOR_LAYERS
+  } = await import('./rules');
+
+  // 1. Verify Sections A, B, C, D, F, G specification constants
+  assert.equal(ARCHITECT_FORGE_UI_LAYOUT_SPEC.sectionB, 'Architect Forge');
+  assert.deepEqual(ARCHITECT_FORGE_UI_LAYOUT_SPEC.sectionC, [
+    'local_fs',
+    'projects',
+    'keybindings'
+  ]);
+  assert.deepEqual(
+    MODE_SELECTION_PILL_TABS.map((t) => t.label),
+    ['Build Mode', 'Char. Build', 'Sound B']
+  );
+
+  // 2. Verify Section E (Mode Specific Feature Buttons) changes dynamically per mode
+  const buildModeBtns = getModeFeatureButtons('architect');
+  assert.deepEqual(
+    buildModeBtns.map((b) => b.label),
+    ['Asset Gen', 'Search', 'L/S BP', 'First-Person']
+  );
+  assert.equal(buildModeBtns[0].targetArchitectTab, 'ai3d');
+  assert.equal(buildModeBtns[1].targetArchitectTab, 'catalog');
+  assert.equal(buildModeBtns[2].targetArchitectTab, 'blueprints');
+  assert.equal(buildModeBtns[3].targetMode, 'walkthrough');
+
+  const charModeBtns = getModeFeatureButtons('character');
+  assert.equal(charModeBtns.length, 4);
+  assert.notDeepEqual(
+    charModeBtns.map((b) => b.label),
+    buildModeBtns.map((b) => b.label)
+  );
+  assert.equal(charModeBtns[charModeBtns.length - 1].targetMode, 'walkthrough');
+
+  const soundModeBtns = getModeFeatureButtons('soundboard');
+  assert.equal(soundModeBtns.length, 4);
+  assert.notDeepEqual(
+    soundModeBtns.map((b) => b.label),
+    buildModeBtns.map((b) => b.label)
+  );
+
+  const walkModeBtns = getModeFeatureButtons('walkthrough');
+  assert.equal(walkModeBtns[0].targetMode, 'architect');
+
+  // 3. Verify Section F (Floor Selection, ADD/Remove Window) is ONLY visible during Build Mode ('architect')
+  assert.equal(isFloorSelectionWidgetVisible('architect'), true);
+  assert.equal(isFloorSelectionWidgetVisible('character'), false);
+  assert.equal(isFloorSelectionWidgetVisible('soundboard'), false);
+  assert.equal(isFloorSelectionWidgetVisible('walkthrough'), false);
+
+  // 4. Verify isometric diamond floor codes and UP / DOWN stepping
+  const codes = INITIAL_FLOOR_LAYERS.map((l) => formatFloorDiamondCode(l));
+  assert.equal(codes.includes('B1'), true);
+  assert.equal(codes.includes('F1'), true);
+  assert.equal(codes.includes('F2'), true);
+  assert.equal(codes.includes('F3'), true);
+
+  const steppedUpFromLobby = stepFloorSelection(INITIAL_FLOOR_LAYERS, 'lobby', 'up');
+  assert.equal(steppedUpFromLobby, 'floor1');
+  const steppedDownFromLobby = stepFloorSelection(INITIAL_FLOOR_LAYERS, 'lobby', 'down');
+  assert.equal(steppedDownFromLobby, 'basement');
+
+  // 5. Verify Floor Layer removal (Remove button in Section F)
+  const afterRemoveF3 = removeFloorLayer(INITIAL_FLOOR_LAYERS, 'floor3', 'floor3');
+  assert.equal(afterRemoveF3.layers.length, INITIAL_FLOOR_LAYERS.length - 1);
+  assert.equal(afterRemoveF3.removedLayer?.id, 'floor3');
+  assert.equal(afterRemoveF3.nextCurrentFloor, 'floor2');
+});
+
+
 

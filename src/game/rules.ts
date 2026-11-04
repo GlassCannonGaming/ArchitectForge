@@ -4103,14 +4103,32 @@ function escapeXmlAttr(str: string): string {
  * of a RoomBlueprint when saved or displayed in the 'Recent' & Room Blueprints Library.
  */
 export function generateTopDownRoomBlueprintPreview(
-  items: RoomBlueprintItem[],
+  itemsOrBlueprint: RoomBlueprintItem[] | RoomBlueprint,
   boundingSize?: [number, number],
   title?: string
 ): TopDownRoomPreviewSpec {
   const viewBoxWidth = 160;
   const viewBoxHeight = 112;
   const pad = 14;
-  const safeItems = Array.isArray(items) ? items : [];
+  const isBlueprintObj =
+    Boolean(itemsOrBlueprint) &&
+    !Array.isArray(itemsOrBlueprint) &&
+    typeof itemsOrBlueprint === 'object' &&
+    Array.isArray((itemsOrBlueprint as RoomBlueprint).items);
+  const safeItems = Array.isArray(itemsOrBlueprint)
+    ? itemsOrBlueprint
+    : isBlueprintObj
+    ? (itemsOrBlueprint as RoomBlueprint).items
+    : [];
+  const resolvedBoundingSize = isBlueprintObj
+    ? (itemsOrBlueprint as RoomBlueprint).boundingSize
+    : boundingSize;
+  const resolvedTitle =
+    typeof title === 'string'
+      ? title
+      : isBlueprintObj
+      ? (itemsOrBlueprint as RoomBlueprint).name
+      : 'TOP-DOWN PLAN';
 
   let minX = -2.5;
   let maxX = 2.5;
@@ -4137,9 +4155,9 @@ export function generateTopDownRoomBlueprintPreview(
       minZ = Math.min(minZ, rz - extZ);
       maxZ = Math.max(maxZ, rz + extZ);
     }
-  } else if (Array.isArray(boundingSize) && boundingSize.length === 2) {
-    const sx = Math.max(2, Number(boundingSize[0]) || 4);
-    const sz = Math.max(2, Number(boundingSize[1]) || 4);
+  } else if (Array.isArray(resolvedBoundingSize) && resolvedBoundingSize.length === 2) {
+    const sx = Math.max(2, Number(resolvedBoundingSize[0]) || 4);
+    const sz = Math.max(2, Number(resolvedBoundingSize[1]) || 4);
     minX = -sx / 2;
     maxX = sx / 2;
     minZ = -sz / 2;
@@ -4148,8 +4166,8 @@ export function generateTopDownRoomBlueprintPreview(
 
   const rawSpanX = Math.max(1.5, maxX - minX);
   const rawSpanZ = Math.max(1.5, maxZ - minZ);
-  const roomSpanX = Math.round((boundingSize?.[0] || rawSpanX) * 10) / 10;
-  const roomSpanZ = Math.round((boundingSize?.[1] || rawSpanZ) * 10) / 10;
+  const roomSpanX = Math.round((resolvedBoundingSize?.[0] || rawSpanX) * 10) / 10;
+  const roomSpanZ = Math.round((resolvedBoundingSize?.[1] || rawSpanZ) * 10) / 10;
   const centerWorldX = (minX + maxX) * 0.5;
   const centerWorldZ = (minZ + maxZ) * 0.5;
 
@@ -4247,7 +4265,7 @@ export function generateTopDownRoomBlueprintPreview(
     })
     .join('');
 
-  const cleanTitle = escapeXmlAttr((title || 'TOP-DOWN PLAN').slice(0, 22));
+  const cleanTitle = escapeXmlAttr(String(resolvedTitle || 'TOP-DOWN PLAN').slice(0, 22));
   const dimsLabel = `${roomSpanX}×${roomSpanZ}m · ${safeItems.length} obj`;
 
   const svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewBoxWidth} ${viewBoxHeight}" width="${viewBoxWidth}" height="${viewBoxHeight}"><rect width="${viewBoxWidth}" height="${viewBoxHeight}" rx="8" fill="#091326" />${gridLines.join('')}<rect x="${roomRectX}" y="${roomRectY}" width="${roomRectW}" height="${roomRectH}" rx="2" fill="#0f2342" fill-opacity="0.55" stroke="#38bdf8" stroke-opacity="0.45" stroke-width="0.9" stroke-dasharray="3,2" />${shapesSvg}<rect x="0" y="${viewBoxHeight - 15}" width="${viewBoxWidth}" height="15" fill="#020617" fill-opacity="0.82" /><text x="6" y="${viewBoxHeight - 4.5}" fill="#7dd3fc" font-family="monospace" font-size="7.5" font-weight="bold">TOP-DOWN · ${cleanTitle}</text><text x="${viewBoxWidth - 5}" y="${viewBoxHeight - 4.5}" text-anchor="end" fill="#fbbf24" font-family="monospace" font-size="7.2" font-weight="bold">${escapeXmlAttr(dimsLabel)}</text></svg>`;
@@ -4718,13 +4736,13 @@ export function createDefaultStudioWindows(): Record<StudioWindowId, StudioWindo
     },
     layers: {
       id: 'layers',
-      title: 'Floor Layers Stack',
-      shortTitle: '🏢 Floor Layers',
-      x: 1035,
-      y: 78,
-      width: 232,
-      height: 350,
-      minWidth: 200,
+      title: 'Floor Selection',
+      shortTitle: '🏢 Floors',
+      x: 1048,
+      y: 124,
+      width: 218,
+      height: 336,
+      minWidth: 190,
       minHeight: 210,
       isOpen: true,
       isMinimized: false,
@@ -13506,4 +13524,288 @@ export function applyLightingMoodDirectiveToAssets(
   };
 }
 
+/**
+ * ============================================================================
+ * ARCHITECT FORGE A–G UI LAYOUT & MODE-SPECIFIC FEATURE BUTTONS SPECIFICATION
+ * ============================================================================
+ * Matches the user's hand-drawn UI architecture (Sections A through G):
+ * - A: Logo (Left circular badge in Title Section)
+ * - B: App Name ("Architect Forge" centered in Title Section)
+ * - C: Folder / Save/Load / Files / Projects / Key Binds (Right circular segmented hub in Title Section)
+ * - D: Mode Selection ("Build Mode", "Char. Build", "Sound B" centered pill bar)
+ * - E: Mode Specific Feature Buttons Section (dynamically changes depending on active mode;
+ *      in Build Mode shows: "Asset Gen", "Search", "L/S BP", "First-Person")
+ * - F: Floor Selection, ADD/Remove Window (UP/DOWN arrows + stacked diamond floor plates + ADD NEW / Remove,
+ *      strictly visible ONLY during Build Mode)
+ * - G: Working Canvas (Main 3D isometric/perspective grid viewport)
+ */
+export interface ModeSelectionPillItem {
+  id: 'architect' | 'character' | 'soundboard';
+  label: string;
+  legacyLabel: string;
+}
 
+export const MODE_SELECTION_PILL_TABS: ReadonlyArray<ModeSelectionPillItem> = [
+  { id: 'architect', label: 'Build Mode', legacyLabel: '1 · Build Mode' },
+  { id: 'character', label: 'Char. Build', legacyLabel: '2 · Create-A-Character' },
+  { id: 'soundboard', label: 'Sound B', legacyLabel: '3 · Sound Board' }
+] as const;
+
+export type ArchitectCatalogSubTab = 'catalog' | 'sets' | 'blueprints' | 'ai3d';
+
+export interface ModeFeatureButtonSpec {
+  id: string;
+  label: string;
+  mode: EditorWorkspaceModeId;
+  targetArchitectTab?: ArchitectCatalogSubTab;
+  targetWindowId?: StudioWindowId;
+  targetMode?: EditorWorkspaceModeId;
+  specialAction?: 'toggle_flashlight' | 'toggle_lighting' | 'toggle_crouch' | 'focus_search';
+  description: string;
+}
+
+export const ARCHITECT_FORGE_UI_LAYOUT_SPEC = {
+  sectionA: 'logo_left_circle' as const,
+  sectionB: 'Architect Forge' as const,
+  sectionC: ['local_fs', 'projects', 'keybindings'] as const,
+  sectionD: MODE_SELECTION_PILL_TABS,
+  sectionFVisibleOnlyInBuildMode: true as const,
+  sectionG: 'working_canvas_3d' as const
+} as const;
+
+/**
+ * Returns the mode-specific feature buttons for Section E depending on the active mode.
+ * In Build Mode ('architect'), returns the exact 4 buttons from the user's drawing:
+ * ["Asset Gen", "Search", "L/S BP", "First-Person"].
+ */
+export function getModeFeatureButtons(mode: EditorWorkspaceModeId): ModeFeatureButtonSpec[] {
+  if (mode === 'architect') {
+    return [
+      {
+        id: 'asset_gen',
+        label: 'Asset Gen',
+        mode: 'architect',
+        targetArchitectTab: 'ai3d',
+        targetWindowId: 'catalog',
+        description: 'Open AI Asset Generator (Meshy Image-to-3D, Flash-Lite Texture & Scale Ref)'
+      },
+      {
+        id: 'search',
+        label: 'Search',
+        mode: 'architect',
+        targetArchitectTab: 'catalog',
+        targetWindowId: 'catalog',
+        specialAction: 'focus_search',
+        description: 'Open & Search the 3D Asset Catalog and Saved Asset Sets'
+      },
+      {
+        id: 'ls_bp',
+        label: 'L/S BP',
+        mode: 'architect',
+        targetArchitectTab: 'blueprints',
+        targetWindowId: 'catalog',
+        description: 'Load / Save Room Blueprints Library'
+      },
+      {
+        id: 'first_person',
+        label: 'First-Person',
+        mode: 'architect',
+        targetMode: 'walkthrough',
+        description: 'Enter First-Person Walk Mode on the Working Canvas'
+      }
+    ];
+  }
+
+  if (mode === 'character') {
+    return [
+      {
+        id: 'char_rig',
+        label: 'Rig & Look',
+        mode: 'character',
+        targetWindowId: 'char_appearance',
+        description: 'Customize 3D Humanoid Skeleton Rig, Proportions & Attire'
+      },
+      {
+        id: 'char_ai',
+        label: 'AI & Schedule',
+        mode: 'character',
+        targetWindowId: 'char_ai',
+        description: 'Configure Character Persona, Episodic Memory & Daily Schedule'
+      },
+      {
+        id: 'char_anim',
+        label: 'AI Anim Studio',
+        mode: 'character',
+        targetWindowId: 'char_appearance',
+        description: 'Synthesize Low-Frame Character Animations & Facial Expressions'
+      },
+      {
+        id: 'first_person',
+        label: 'First-Person',
+        mode: 'character',
+        targetMode: 'walkthrough',
+        description: 'Test Characters Live in First-Person Walk Mode'
+      }
+    ];
+  }
+
+  if (mode === 'soundboard') {
+    return [
+      {
+        id: 'sound_synth',
+        label: 'Sound Synth',
+        mode: 'soundboard',
+        targetWindowId: 'audio',
+        description: 'Open Parametric Foley SFX & Multi-Voice Music Composer'
+      },
+      {
+        id: 'asset_sound',
+        label: 'Asset Audio',
+        mode: 'soundboard',
+        targetWindowId: 'audio',
+        description: 'Assign Custom Sounds to Placed 3D Assets & Catalog Blueprints'
+      },
+      {
+        id: 'ambience_loop',
+        label: 'Ambience Loop',
+        mode: 'soundboard',
+        targetWindowId: 'audio',
+        description: 'Configure High-Suspicion Room Ambience & Footstep Acoustics'
+      },
+      {
+        id: 'first_person',
+        label: 'First-Person',
+        mode: 'soundboard',
+        targetMode: 'walkthrough',
+        description: 'Audition Spatial Audio in First-Person Walk Mode'
+      }
+    ];
+  }
+
+  // mode === 'walkthrough' (First-Person Mode)
+  return [
+    {
+      id: 'return_build',
+      label: 'Build Mode',
+      mode: 'walkthrough',
+      targetMode: 'architect',
+      description: 'Exit First-Person Walk Mode and Return to Build Mode'
+    },
+    {
+      id: 'flashlight_toggle',
+      label: 'Flashlight [L]',
+      mode: 'walkthrough',
+      specialAction: 'toggle_flashlight',
+      description: 'Toggle 1970s Chrome D-Cell / UV Inspection Flashlight'
+    },
+    {
+      id: 'lighting_toggle',
+      label: 'Scene Light',
+      mode: 'walkthrough',
+      specialAction: 'toggle_lighting',
+      description: 'Toggle Dynamic Room Mood Lighting'
+    },
+    {
+      id: 'first_person',
+      label: 'First-Person (Exit)',
+      mode: 'walkthrough',
+      targetMode: 'architect',
+      description: 'Exit First-Person Walk Mode'
+    }
+  ];
+}
+
+/**
+ * Enforces that Section F (Floor Selection, ADD/Remove Window) is strictly visible ONLY during Build Mode ('architect').
+ */
+export function isFloorSelectionWidgetVisible(mode: EditorWorkspaceModeId): boolean {
+  return mode === 'architect';
+}
+
+/**
+ * Formats a floor layer short code to match the sketch's diamond labels (e.g., "F3", "F2", "F1", "L1", "B1").
+ */
+export function formatFloorDiamondCode(layer: Pick<FloorLayer, 'id' | 'shortCode' | 'elevation'>): string {
+  const raw = (layer.shortCode || '').trim().toUpperCase();
+  const matchNumF = raw.match(/^(\d+)F$/);
+  if (matchNumF) {
+    return `F${matchNumF[1]}`;
+  }
+  if (raw) return raw;
+  if (layer.elevation < 0) return `B${Math.abs(layer.elevation)}`;
+  if (layer.elevation === 0) return 'L1';
+  return `F${layer.elevation}`;
+}
+
+/**
+ * Steps the active floor selection UP (higher elevation) or DOWN (lower elevation)
+ * through the top-down elevation-sorted floor stack.
+ */
+export function stepFloorSelection(
+  layers: readonly FloorLayer[],
+  currentFloor: FloorId,
+  direction: 'up' | 'down'
+): FloorId {
+  if (!Array.isArray(layers) || layers.length === 0) return currentFloor;
+  const sortedTopDown = [...layers].sort((a, b) => b.elevation - a.elevation);
+  const idx = sortedTopDown.findIndex((l) => l.id === currentFloor);
+  if (idx === -1) return sortedTopDown[0].id;
+  if (direction === 'up') {
+    return idx > 0 ? sortedTopDown[idx - 1].id : sortedTopDown[0].id;
+  }
+  return idx < sortedTopDown.length - 1
+    ? sortedTopDown[idx + 1].id
+    : sortedTopDown[sortedTopDown.length - 1].id;
+}
+
+/**
+ * Removes a floor layer from the floor stack (while protecting at least 1 remaining floor layer)
+ * and resolves the next active floor if the removed floor was currently selected.
+ */
+export function removeFloorLayer(
+  layers: readonly FloorLayer[],
+  floorIdToRemove: FloorId,
+  currentFloor: FloorId
+): {
+  layers: FloorLayer[];
+  nextCurrentFloor: FloorId;
+  removedLayer: FloorLayer | null;
+  removed: boolean;
+} {
+  const safeLayers = Array.isArray(layers) ? [...layers] : [];
+  if (safeLayers.length <= 1) {
+    return {
+      layers: safeLayers,
+      nextCurrentFloor: currentFloor,
+      removedLayer: null,
+      removed: false
+    };
+  }
+
+  const sortedTopDown = [...safeLayers].sort((a, b) => b.elevation - a.elevation);
+  const removeIdx = sortedTopDown.findIndex((l) => l.id === floorIdToRemove);
+  if (removeIdx === -1) {
+    return {
+      layers: safeLayers,
+      nextCurrentFloor: currentFloor,
+      removedLayer: null,
+      removed: false
+    };
+  }
+
+  const removedLayer = sortedTopDown[removeIdx];
+  const remaining = safeLayers.filter((l) => l.id !== floorIdToRemove);
+  let nextCurrentFloor = currentFloor;
+  if (currentFloor === floorIdToRemove) {
+    const fallbackNeighbor =
+      sortedTopDown[removeIdx + 1] || sortedTopDown[removeIdx - 1] || remaining[0];
+    nextCurrentFloor = fallbackNeighbor ? fallbackNeighbor.id : remaining[0].id;
+  }
+
+  return {
+    layers: remaining,
+    nextCurrentFloor,
+    removedLayer,
+    removed: true
+  };
+}

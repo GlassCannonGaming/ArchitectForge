@@ -74,7 +74,13 @@ import {
   GlobalAnimationFps,
   DEFAULT_GLOBAL_ANIMATION_FPS,
   TOP_EDITOR_MODE_TABS,
+  MODE_SELECTION_PILL_TABS,
   STUDIO_HEADER_BRAND_SPEC,
+  ARCHITECT_FORGE_UI_LAYOUT_SPEC,
+  getModeFeatureButtons,
+  ModeFeatureButtonSpec,
+  ArchitectCatalogSubTab,
+  removeFloorLayer,
   getTaskbarWindowIdsForMode,
   assignSoundToAssetOrBlueprint,
   AssetSet,
@@ -1269,6 +1275,12 @@ export default function App() {
     );
   }, [currentFloor, floorLayers, recordUndoSnapshot]);
 
+  // External sub-tab control for Section E Mode Feature Buttons ("Asset Gen", "Search", "L/S BP")
+  const [externalArchitectTab, setExternalArchitectTab] = useState<ArchitectCatalogSubTab | null>(
+    null
+  );
+  const [externalTabRequestNonce, setExternalTabRequestNonce] = useState<number>(0);
+
   // Add a new Floor Layer (increases total number of floors dynamically)
   const handleAddFloorLayer = useCallback(() => {
     soundFX.playPlaceAsset();
@@ -1283,6 +1295,32 @@ export default function App() {
       `Added new Floor Layer "${addedLayer.label}" (${nextLayers.length} total floor layers)!`
     );
   }, [floorLayers]);
+
+  // Remove a Floor Layer from Section F (Build Mode Floor Selection, ADD/Remove Window)
+  const handleRemoveFloorLayer = useCallback(
+    (floorId: FloorId) => {
+      if (floorLayers.length <= 1) {
+        setStatusBanner('At least 1 floor layer must remain in the project.');
+        return;
+      }
+      const targetMeta = getFloorMeta(floorId, floorLayers);
+      recordUndoSnapshot(`Remove Floor Layer "${targetMeta.shortCode}"`);
+      soundFX.playPlaceAsset();
+      const res = removeFloorLayer(floorLayers, floorId, currentFloor);
+      if (!res.removedLayer) return;
+      setFloorLayers(res.layers);
+      setCurrentFloor(res.nextCurrentFloor);
+      setAssets((prev) => prev.filter((a) => a.floor !== floorId));
+      setSelectedAssetId(null);
+      setSelectedAssetIds([]);
+      setQuickEditWindowOpen(false);
+      setIsolateSelectedAsset(false);
+      setStatusBanner(
+        `Removed Floor Layer "${res.removedLayer.label}" (${res.layers.length} floor layers remaining).`
+      );
+    },
+    [floorLayers, currentFloor, recordUndoSnapshot]
+  );
 
   // Toggle visibility of any floor layer (like eye icon in Photoshop/GIMP)
   const handleToggleFloorLayerVisibility = useCallback(
@@ -3807,36 +3845,34 @@ export default function App() {
         />
       )}
 
-      {/* 3. SIMS 3 / SIMS 4 FLOATING ROUNDED TOP BAR (Dark Mode Frosted Pill Bar) */}
+      {/* 3. ARCHITECT FORGE UI HEADER STACK (Sections A, B, C, D, E per User Drawing) */}
       <div className="fixed inset-0 z-10 pointer-events-none">
-        <div className="fixed top-2.5 left-3 right-3 flex flex-col items-center gap-1 pointer-events-none">
-          <div className="w-full relative flex items-center justify-center min-h-[36px]">
-            {/* Top-Left Pill: Studio Identity (Green Circle Left · ArchitectForge / Studio Centered · Eye First-Person Walk Button Right) */}
+        <div className="fixed top-2 left-3 right-3 z-[90] flex flex-col items-center gap-1.5 pointer-events-none">
+          {/* ROW 1 — TITLE SECTION: [A. Logo] · [B. App Name: Architect Forge] · [C. Folder / Save/Load / Files / Projects / Key Binds] */}
+          <div
+            data-testid="title-section-bar"
+            className="w-full max-w-[1260px] pointer-events-auto bg-slate-900/95 backdrop-blur-md border border-slate-700/90 rounded-2xl px-3 py-1.5 shadow-xl grid grid-cols-[1fr_auto_1fr] items-center gap-3"
+          >
+            {/* A. Logo (Left circular badge) */}
             <div
               data-testid="studio-title-pill"
-              className="absolute left-0 pointer-events-auto bg-slate-900/95 backdrop-blur-md border border-slate-700/90 rounded-full px-2.5 py-1 shadow-xl flex items-center justify-between gap-3 shrink-0"
+              className="flex items-center gap-2.5 justify-self-start"
             >
               <div
-                data-testid="studio-title-green-circle"
-                aria-hidden="true"
-                className="w-7 h-7 rounded-full bg-gradient-to-br from-[#10b981] to-[#059669] flex items-center justify-center text-white font-['Outfit'] font-extrabold text-xs shadow-2xs shrink-0"
+                data-testid="section-a-logo"
+                title="A. Architect Forge Logo"
+                className="w-9 h-9 rounded-full bg-gradient-to-br from-[#10b981] to-[#059669] border-2 border-emerald-300/70 flex flex-col items-center justify-center text-white font-['Outfit'] font-extrabold shadow-md shrink-0"
               >
-                ◆
-              </div>
-
-              <div className="flex flex-col items-center justify-center text-center leading-none px-1">
-                <div
-                  data-testid="studio-title-primary"
-                  className="text-xs font-['Outfit'] font-extrabold tracking-tight text-slate-100 leading-tight text-center"
+                <span
+                  data-testid="studio-title-green-circle"
+                  aria-hidden="true"
+                  className="text-xs leading-none"
                 >
-                  {STUDIO_HEADER_BRAND_SPEC.primaryTitle}
-                </div>
-                <div
-                  data-testid="studio-title-subtitle"
-                  className="text-[10px] font-['Outfit'] font-bold tracking-wider text-slate-400 leading-tight text-center"
-                >
-                  {STUDIO_HEADER_BRAND_SPEC.centeredSubtitleUnderneath}
-                </div>
+                  ◆
+                </span>
+                <span className="text-[7px] uppercase tracking-wider font-mono leading-none mt-0.5">
+                  Logo
+                </span>
               </div>
 
               <button
@@ -3859,7 +3895,7 @@ export default function App() {
                   setStatusBanner(
                     nextMode === 'walkthrough'
                       ? '👁 First-Person Walk Mode Active — Use WASD to explore corridors, [C] Stealth Crouch, [L] Flashlight, or click the Eye icon to exit.'
-                      : 'Returned to 1 · Build Mode from First-Person Walk.'
+                      : 'Returned to Build Mode from First-Person Walk.'
                   );
                 }}
                 className={`w-7 h-7 rounded-full flex items-center justify-center transition-all shadow-2xs shrink-0 ${
@@ -3881,19 +3917,28 @@ export default function App() {
                   <circle cx="12" cy="12" r="3" />
                 </svg>
               </button>
+
               <button
                 type="button"
                 data-testid="toggle-lighting-btn"
-                title={lightingEnabled ? 'Lighting ENABLED — Click to turn off scene lighting' : 'Lighting DISABLED — Click to turn on scene lighting'}
+                title={
+                  lightingEnabled
+                    ? 'Lighting ENABLED — Click to turn off scene lighting'
+                    : 'Lighting DISABLED — Click to turn on scene lighting'
+                }
                 onClick={() => {
                   setLightingEnabled((v) => {
                     const next = !v;
-                    setStatusBanner(next ? '💡 Scene lighting turned ON.' : '💡 Scene lighting turned OFF.');
+                    setStatusBanner(
+                      next ? '💡 Scene lighting turned ON.' : '💡 Scene lighting turned OFF.'
+                    );
                     return next;
                   });
                 }}
-                className={`px-2.5 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1 shrink-0 ${
-                  lightingEnabled ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50' : 'bg-slate-800 text-slate-400 border border-slate-700'
+                className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all flex items-center gap-1 shrink-0 ${
+                  lightingEnabled
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50'
+                    : 'bg-slate-800 text-slate-400 border border-slate-700'
                 }`}
               >
                 <span>💡</span>
@@ -3901,116 +3946,308 @@ export default function App() {
               </button>
             </div>
 
-            {/* Top-Center Floating Pill: 1 · Build Mode / 2 · Create-A-Character / 3 · Sound Board (Top-Right Action Cluster Removed) */}
-            <div className="pointer-events-auto flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700/90 p-1 rounded-full shadow-xl shrink-0 mx-auto">
-              {TOP_EDITOR_MODE_TABS.map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  data-testid={`editor-mode-tab-${tab.id}`}
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    setMode(tab.id);
-                    if (tab.id === 'soundboard') {
-                      handleToggleOpenWindow('audio', true);
-                      handleFocusWindow('audio');
-                      setStatusBanner(
-                        '🎵 3 · Sound Board Active — Create new sounds or assign specific sounds to 3D assets and blueprints!'
-                      );
-                    } else if (tab.id === 'character') {
-                      handleToggleOpenWindow('audio', false);
-                      handleToggleOpenWindow('char_appearance', true);
-                      handleToggleOpenWindow('char_ai', true);
-                      handleFocusWindow('char_appearance');
-                      handleFocusWindow('char_ai');
-                    } else {
-                      handleToggleOpenWindow('audio', false);
-                    }
-                  }}
-                  className={`px-3.5 py-1 rounded-full text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
-                    mode === tab.id
-                      ? 'bg-gradient-to-r from-[#0ea5e9] to-[#0284c7] text-white shadow-xs'
-                      : 'text-slate-300 hover:text-white hover:bg-slate-800'
-                  }`}
+            {/* B. App Name (Centered in Title Section) */}
+            <div
+              data-testid="section-b-app-name"
+              className="flex flex-col items-center justify-center text-center justify-self-center px-2"
+            >
+              <div className="text-base sm:text-lg font-['Outfit'] font-extrabold tracking-wide text-slate-100 leading-none">
+                {ARCHITECT_FORGE_UI_LAYOUT_SPEC.sectionB}
+              </div>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span
+                  data-testid="studio-title-primary"
+                  className="text-[9px] font-['Outfit'] font-bold tracking-wider text-emerald-400 uppercase"
                 >
-                  {tab.label}
+                  {STUDIO_HEADER_BRAND_SPEC.primaryTitle}
+                </span>
+                <span className="text-[9px] text-slate-500">·</span>
+                <span
+                  data-testid="studio-title-subtitle"
+                  className="text-[9px] font-['Outfit'] font-bold tracking-wider text-slate-400 uppercase"
+                >
+                  {STUDIO_HEADER_BRAND_SPEC.centeredSubtitleUnderneath}
+                </span>
+              </div>
+            </div>
+
+            {/* C. Folder / Save/Load / Files / Projects / Key Binds (Right circular hub + utility buttons) */}
+            <div
+              data-testid="section-c-utility-hub"
+              className="flex items-center gap-1.5 justify-self-end"
+            >
+              {/*Segmented Circular Hub Icon matching Sketch C */}
+              <div
+                title="C. Folder / Save & Load / Files / Projects / Key Binds Hub"
+                className="w-9 h-9 rounded-full bg-slate-800 border-2 border-sky-400/70 grid grid-cols-2 grid-rows-2 overflow-hidden p-0.5 gap-0.5 shrink-0 shadow-md"
+              >
+                <button
+                  type="button"
+                  title="Local Workspace Folders & Files"
+                  onClick={() => {
+                    refreshLocalDiskFoldersStatus();
+                    handleToggleOpenWindow('local_fs', true);
+                    handleFocusWindow('local_fs');
+                  }}
+                  className="bg-slate-700/80 hover:bg-sky-600 text-[9px] flex items-center justify-center rounded-tl-full transition-colors"
+                >
+                  📁
                 </button>
-              ))}
+                <button
+                  type="button"
+                  title="Save / Load Projects"
+                  onClick={() => {
+                    handleToggleOpenWindow('projects', true);
+                    handleFocusWindow('projects');
+                  }}
+                  className="bg-slate-700/80 hover:bg-emerald-600 text-[9px] flex items-center justify-center rounded-tr-full transition-colors"
+                >
+                  💾
+                </button>
+                <button
+                  type="button"
+                  title="Key Binds & Shortcuts [K]"
+                  onClick={() => {
+                    handleToggleOpenWindow('keybindings', true);
+                    handleFocusWindow('keybindings');
+                  }}
+                  className="col-span-2 bg-slate-700/80 hover:bg-amber-600 text-[9px] flex items-center justify-center rounded-b-full transition-colors"
+                >
+                  ⌨️
+                </button>
+              </div>
+
+              {/* Explicit Pill Buttons for C: Folder/Files, Save/Load Projects, Key Binds */}
+              <div className="flex items-center gap-1 bg-slate-800/90 border border-slate-700 rounded-full p-0.5">
+                {[
+                  {
+                    winId: 'local_fs' as StudioWindowId,
+                    testId: 'open-local-folders-btn',
+                    label: '📁 Folders / Files'
+                  },
+                  {
+                    winId: 'projects' as StudioWindowId,
+                    testId: 'open-project-manager-btn',
+                    label: '💾 Save / Load'
+                  },
+                  {
+                    winId: 'keybindings' as StudioWindowId,
+                    testId: 'open-keybindings-btn',
+                    label: '⌨️ Key Binds'
+                  }
+                ].map((item) => {
+                  const win = studioWindows[item.winId] || createDefaultStudioWindows()[item.winId];
+                  const isVisible = Boolean(win && win.isOpen && !win.isMinimized);
+                  return (
+                    <button
+                      key={item.winId}
+                      type="button"
+                      data-testid={item.testId}
+                      onClick={() => {
+                        setStudioWindows((prev) => {
+                          const result = handleTaskbarWindowButtonClick(
+                            prev,
+                            item.winId,
+                            mode,
+                            window.innerWidth,
+                            window.innerHeight
+                          );
+                          if (item.winId === 'local_fs' && result.action !== 'closed') {
+                            refreshLocalDiskFoldersStatus();
+                          }
+                          const label = result.windowState.title || result.windowState.shortTitle;
+                          if (result.action === 'opened') {
+                            setStatusBanner(`Opened ${label} window.`);
+                          } else if (result.action === 'restored') {
+                            setStatusBanner(`Restored ${label} window.`);
+                          } else if (result.action === 'focused') {
+                            setStatusBanner(`Brought ${label} window to front.`);
+                          } else {
+                            setStatusBanner(`Closed ${label} window.`);
+                          }
+                          return result.windows;
+                        });
+                      }}
+                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all whitespace-nowrap ${
+                        isVisible
+                          ? 'bg-sky-600 text-white shadow-2xs'
+                          : 'text-slate-300 hover:text-white hover:bg-slate-700'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
-          {/* Window Manager Taskbar (Small status bar underneath removed per user request) */}
-          <div className="flex flex-wrap items-center justify-center gap-1.5 pointer-events-auto">
+          {/* ROW 2 — D. MODE SELECTION SECTION: Centered Pill Bar [Build Mode] [Char. Build] [Sound B] */}
+          <div
+            data-testid="section-d-mode-selection"
+            aria-label="D. Mode Selection"
+            className="pointer-events-auto flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/90 px-2 py-1 rounded-full shadow-xl"
+          >
+            {MODE_SELECTION_PILL_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                data-testid={`editor-mode-tab-${tab.id}`}
+                onClick={(e) => {
+                  e.currentTarget.blur();
+                  setMode(tab.id);
+                  if (tab.id === 'soundboard') {
+                    handleToggleOpenWindow('audio', true);
+                    handleFocusWindow('audio');
+                    setStatusBanner(
+                      '🎵 Sound B Mode Active — Create new sounds or assign specific sounds to 3D assets and blueprints!'
+                    );
+                  } else if (tab.id === 'character') {
+                    handleToggleOpenWindow('audio', false);
+                    handleToggleOpenWindow('char_appearance', true);
+                    handleToggleOpenWindow('char_ai', true);
+                    handleFocusWindow('char_appearance');
+                    handleFocusWindow('char_ai');
+                    setStatusBanner(
+                      '🧑 Char. Build Mode Active — Customize character rig, appearance, and AI schedule!'
+                    );
+                  } else {
+                    handleToggleOpenWindow('audio', false);
+                    setStatusBanner('🏗️ Build Mode Active — Floor Selection (F) and Build Mode Features (E) ready.');
+                  }
+                }}
+                className={`px-4 py-1 rounded-full text-xs font-extrabold transition-all whitespace-nowrap border ${
+                  mode === tab.id
+                    ? 'bg-gradient-to-r from-[#0ea5e9] to-[#0284c7] text-white border-sky-400 shadow-xs'
+                    : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* ROW 3 — E. MODE SPECIFIC FEATURE BUTTONS SECTION (Dynamically changes per active Mode) */}
+          <div
+            data-testid="section-e-mode-features"
+            aria-label="E. Mode Specific Feature Buttons"
+            className="pointer-events-auto flex flex-wrap items-center justify-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/90 px-3 py-1 rounded-full shadow-xl"
+          >
+            {getModeFeatureButtons(mode).map((featBtn: ModeFeatureButtonSpec) => {
+              const isCatalogWinOpen = Boolean(
+                studioWindows.catalog?.isOpen && !studioWindows.catalog?.isMinimized
+              );
+              const isActiveFeature =
+                (Boolean(featBtn.targetArchitectTab) &&
+                  isCatalogWinOpen &&
+                  externalArchitectTab === featBtn.targetArchitectTab) ||
+                (Boolean(featBtn.targetMode) && mode === featBtn.targetMode);
+
+              return (
+                <button
+                  key={featBtn.id}
+                  type="button"
+                  data-testid={`mode-feature-btn-${featBtn.id}`}
+                  title={featBtn.description}
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    if (featBtn.targetMode) {
+                      setMode(featBtn.targetMode);
+                      setStatusBanner(
+                        featBtn.targetMode === 'walkthrough'
+                          ? '👁 First-Person Walk Mode Active — Use WASD to explore corridors, [C] Stealth Crouch, [L] Flashlight.'
+                          : 'Returned to Build Mode.'
+                      );
+                      return;
+                    }
+                    if (featBtn.targetArchitectTab) {
+                      handleToggleOpenWindow('catalog', true);
+                      handleFocusWindow('catalog');
+                      setExternalArchitectTab(featBtn.targetArchitectTab);
+                      setExternalTabRequestNonce((n) => n + 1);
+                      setStatusBanner(`Opened ${featBtn.label} (${featBtn.description}).`);
+                      return;
+                    }
+                    if (featBtn.targetWindowId) {
+                      handleToggleOpenWindow(featBtn.targetWindowId, true);
+                      handleFocusWindow(featBtn.targetWindowId);
+                      setStatusBanner(`Focused ${featBtn.label} window.`);
+                      return;
+                    }
+                    if (featBtn.specialAction === 'toggle_lighting') {
+                      setLightingEnabled((v) => {
+                        const next = !v;
+                        setStatusBanner(
+                          next ? '💡 Scene lighting turned ON.' : '💡 Scene lighting turned OFF.'
+                        );
+                        return next;
+                      });
+                      return;
+                    }
+                    if (featBtn.specialAction === 'toggle_flashlight') {
+                      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyL' }));
+                      setStatusBanner('🔦 Toggled First-Person Flashlight [L].');
+                    }
+                  }}
+                  className={`px-3.5 py-1 rounded-full text-xs font-extrabold transition-all whitespace-nowrap border ${
+                    isActiveFeature
+                      ? 'bg-emerald-600 text-white border-emerald-400 shadow-2xs'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-600/90 hover:border-sky-400'
+                  }`}
+                >
+                  {featBtn.label}
+                </button>
+              );
+            })}
+
+            {/* Divider + Studio Window Drawer buttons so Tools / Catalog / Inspector / Reset Layout remain one-click accessible */}
+            <span className="h-4 w-px bg-slate-700 mx-0.5" />
             <div
               aria-label="Studio Window Taskbar"
-              className="bg-slate-900/95 backdrop-blur-md border border-slate-700/90 px-2.5 py-0.5 rounded-full shadow-xl flex items-center gap-1 text-[11px]"
+              className="flex items-center gap-1 text-[10px]"
             >
-              <span className="font-extrabold text-slate-400 uppercase tracking-wider text-[10px] mr-1">
-                Windows:
-              </span>
-              {getTaskbarWindowIdsForMode(mode).map((winId) => {
-                const win = studioWindows[winId] || createDefaultStudioWindows()[winId];
-                const isVisible = Boolean(win && win.isOpen && !win.isMinimized);
-                const legacyTestId =
-                  winId === 'local_fs'
-                    ? 'open-local-folders-btn'
-                    : winId === 'keybindings'
-                    ? 'open-keybindings-btn'
-                    : winId === 'projects'
-                    ? 'open-project-manager-btn'
-                    : `taskbar-window-btn-${winId}`;
-                return (
-                  <button
-                    key={winId}
-                    type="button"
-                    data-testid={legacyTestId}
-                    title={
-                      isVisible
-                        ? `Click to focus ${win.title} to front (or click again when focused to hide)`
-                        : `Open ${win.title}`
-                    }
-                    onClick={() => {
-                      setStudioWindows((prev) => {
-                        const result = handleTaskbarWindowButtonClick(
-                          prev,
-                          winId,
-                          mode,
-                          window.innerWidth,
-                          window.innerHeight
-                        );
-                        if (winId === 'local_fs' && result.action !== 'closed') {
-                          refreshLocalDiskFoldersStatus();
-                        }
-                        const label = result.windowState.title || result.windowState.shortTitle;
-                        if (result.action === 'opened') {
-                          setStatusBanner(`Opened ${label} window.`);
-                        } else if (result.action === 'restored') {
-                          setStatusBanner(`Restored ${label} window.`);
-                        } else if (result.action === 'focused') {
-                          setStatusBanner(`Brought ${label} window to front.`);
-                        } else {
-                          setStatusBanner(
-                            `Closed ${label} window — click "${result.windowState.shortTitle}" in the WINDOWS bar to reopen.`
+              {getTaskbarWindowIdsForMode(mode)
+                .filter((winId) => winId !== 'local_fs' && winId !== 'projects' && winId !== 'keybindings')
+                .map((winId) => {
+                  const win = studioWindows[winId] || createDefaultStudioWindows()[winId];
+                  const isVisible = Boolean(win && win.isOpen && !win.isMinimized);
+                  return (
+                    <button
+                      key={winId}
+                      type="button"
+                      data-testid={`taskbar-window-btn-${winId}`}
+                      title={
+                        isVisible
+                          ? `Click to focus ${win.title} to front (or click again when focused to hide)`
+                          : `Open ${win.title}`
+                      }
+                      onClick={() => {
+                        setStudioWindows((prev) => {
+                          const result = handleTaskbarWindowButtonClick(
+                            prev,
+                            winId,
+                            mode,
+                            window.innerWidth,
+                            window.innerHeight
                           );
-                        }
-                        return result.windows;
-                      });
-                    }}
-                    className={`px-2 py-0.5 rounded-full font-bold transition-all ${
-                      isVisible
-                        ? 'bg-sky-950/90 text-sky-300 border border-sky-600/80'
-                        : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
-                    }`}
-                  >
-                    {win ? win.shortTitle : winId}
-                  </button>
-                );
-              })}
+                          return result.windows;
+                        });
+                      }}
+                      className={`px-2 py-0.5 rounded-full font-bold transition-all ${
+                        isVisible
+                          ? 'bg-sky-950/90 text-sky-300 border border-sky-600/80'
+                          : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
+                      }`}
+                    >
+                      {win ? win.shortTitle : winId}
+                    </button>
+                  );
+                })}
               <button
                 type="button"
                 onClick={handleResetWindowLayout}
                 title="Reset all windows to default positions & sizes [H]"
-                className="px-2 py-0.5 rounded-full bg-amber-950/90 hover:bg-amber-900 text-amber-200 border border-amber-700/70 font-bold text-[10px] ml-1"
+                className="px-2 py-0.5 rounded-full bg-amber-950/90 hover:bg-amber-900 text-amber-200 border border-amber-700/70 font-bold text-[10px]"
               >
                 Reset Layout
               </button>
@@ -4244,8 +4481,11 @@ export default function App() {
             setStatusBanner(`Switched active editing layer to ${meta.label}.`);
           }}
           onAddFloorLayer={handleAddFloorLayer}
+          onRemoveFloorLayer={handleRemoveFloorLayer}
           onToggleFloorLayerVisibility={handleToggleFloorLayerVisibility}
           onClearFloor={handleClearCurrentFloor}
+          externalArchitectTab={externalArchitectTab}
+          externalTabRequestNonce={externalTabRequestNonce}
           catalogAssets={catalogAssets}
           floorAssets={floorAssets}
           selectedAsset={selectedAsset}

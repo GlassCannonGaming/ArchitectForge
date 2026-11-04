@@ -41,7 +41,10 @@ import {
   SNAP_GRID_SIZE_OPTIONS,
   DEFAULT_SNAP_GRID_SIZE,
   safeExecuteCatalogOrVariantCallback,
-  generateTopDownRoomBlueprintPreview
+  generateTopDownRoomBlueprintPreview,
+  isFloorSelectionWidgetVisible,
+  formatFloorDiamondCode,
+  ArchitectCatalogSubTab
 } from '../game/rules';
 import { AssetBlueprint } from '../game/hotelData';
 import {
@@ -67,8 +70,11 @@ interface UnifiedBottomDockProps {
   floorLayers: FloorLayer[];
   onSelectFloor: (floor: FloorId) => void;
   onAddFloorLayer: () => void;
+  onRemoveFloorLayer?: (floorId: FloorId) => void;
   onToggleFloorLayerVisibility: (floor: FloorId) => void;
   onClearFloor: () => void;
+  externalArchitectTab?: ArchitectCatalogSubTab | null;
+  externalTabRequestNonce?: number;
   catalogAssets: AssetBlueprint[];
   floorAssets: PlacedAsset[];
   selectedAsset: PlacedAsset | null;
@@ -170,8 +176,11 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
   floorLayers,
   onSelectFloor,
   onAddFloorLayer,
+  onRemoveFloorLayer,
   onToggleFloorLayerVisibility,
   onClearFloor,
+  externalArchitectTab,
+  externalTabRequestNonce,
   catalogAssets,
   floorAssets,
   selectedAsset,
@@ -234,6 +243,19 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
   onResetRoom
 }) => {
   const [architectTab, setArchitectTab] = useState<'catalog' | 'sets' | 'blueprints' | 'ai3d'>('catalog');
+  const catalogSearchInputRef = useRef<HTMLInputElement | null>(null);
+
+  React.useEffect(() => {
+    if (externalArchitectTab) {
+      setArchitectTab(externalArchitectTab);
+      if (externalArchitectTab === 'catalog') {
+        setTimeout(() => {
+          catalogSearchInputRef.current?.focus();
+        }, 40);
+      }
+    }
+  }, [externalArchitectTab, externalTabRequestNonce]);
+
   const [activeRenovationTheme, setActiveRenovationTheme] = useState<AssetConditionVariant | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
   const [capabilityFilter, setCapabilityFilter] = useState<CatalogCapabilityFilter>('all');
@@ -397,9 +419,9 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
         className="hidden"
       />
 
-      {mode !== 'character' && mode !== 'soundboard' && (
-        <>
-          {/* 1. FLOOR LAYERS STACK WINDOW */}
+      {/* F. FLOOR SELECTION, ADD / REMOVE WINDOW — STRICTLY VISIBLE ONLY DURING BUILD MODE */}
+      {isFloorSelectionWidgetVisible(mode) && (
+        <div data-testid="section-f-floor-selection-window">
           <StudioWindowFrame
             windowState={windows.layers || createDefaultStudioWindows().layers}
             badgeText={`${floorLayers.length} Floors`}
@@ -411,48 +433,152 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
             onClose={onCloseWindow}
           >
             <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-1">
-                <span className="text-[11px] font-bold text-slate-600">Step Elevation:</span>
-                <div className="flex items-center gap-1">
+              {/* Sketch F Layout: Left UP/DOWN Arrows + Right Isometric Diamond Floor Stack (F3, F2, F1, B1) */}
+              <div className="flex items-stretch gap-2.5 bg-slate-900/95 border border-slate-700/90 rounded-2xl p-2.5 text-slate-100 shadow-inner">
+                {/* Left Column: UP ↑ / DOWN ↓ Navigation */}
+                <div className="flex flex-col items-center justify-between py-0.5 pr-2 border-r border-slate-800 shrink-0">
                   <button
                     type="button"
                     data-testid="step-floor-up-btn"
                     onClick={handleStepFloorUp}
-                    title="Move Up One Floor Layer"
-                    className={`w-6 h-6 rounded-full bg-slate-100 hover:bg-[#e0f2fe] text-slate-700 text-[10px] font-bold flex items-center justify-center border border-slate-300 ${
-                      currentLayerIndex <= 0 ? 'opacity-40' : ''
+                    disabled={currentLayerIndex <= 0}
+                    title="Step UP One Floor Layer"
+                    className={`w-7 h-7 rounded-full flex items-center justify-center border text-xs font-extrabold transition-all ${
+                      currentLayerIndex <= 0
+                        ? 'bg-slate-800/50 border-slate-700/60 text-slate-500 cursor-not-allowed'
+                        : 'bg-slate-800 hover:bg-sky-600 text-sky-300 hover:text-white border-sky-500/60 shadow-2xs'
                     }`}
                   >
-                    ▲
+                    ↑
                   </button>
+                  <div className="flex flex-col items-center leading-tight my-1 select-none">
+                    <span className="text-[9px] font-extrabold tracking-wider text-sky-300 uppercase">
+                      UP
+                    </span>
+                    <span className="text-[8px] text-slate-500">·</span>
+                    <span className="text-[9px] font-extrabold tracking-wider text-amber-300 uppercase">
+                      DOWN
+                    </span>
+                  </div>
                   <button
                     type="button"
                     data-testid="step-floor-down-btn"
                     onClick={handleStepFloorDown}
-                    title="Move Down One Floor Layer"
-                    className={`w-6 h-6 rounded-full bg-slate-100 hover:bg-[#e0f2fe] text-slate-700 text-[10px] font-bold flex items-center justify-center border border-slate-300 ${
+                    disabled={currentLayerIndex < 0 || currentLayerIndex >= sortedLayersTopDown.length - 1}
+                    title="Step DOWN One Floor Layer"
+                    className={`w-7 h-7 rounded-full flex items-center justify-center border text-xs font-extrabold transition-all ${
                       currentLayerIndex < 0 || currentLayerIndex >= sortedLayersTopDown.length - 1
-                        ? 'opacity-40'
-                        : ''
+                        ? 'bg-slate-800/50 border-slate-700/60 text-slate-500 cursor-not-allowed'
+                        : 'bg-slate-800 hover:bg-amber-600 text-amber-300 hover:text-white border-amber-500/60 shadow-2xs'
                     }`}
                   >
-                    ▼
+                    ↓
                   </button>
+                </div>
+
+                {/* Right Column: Stacked Isometric Diamond Floor Plates (F3, F2, F1, L1, B1) */}
+                <div className="flex-1 flex flex-col justify-center gap-1.5 min-w-0">
+                  {sortedLayersTopDown.map((layer) => {
+                    const isActive = layer.id === currentFloor;
+                    const diamondCode = formatFloorDiamondCode(layer);
+                    return (
+                      <div
+                        key={layer.id}
+                        data-testid={`floor-diamond-row-${layer.id}`}
+                        className={`flex items-center justify-between gap-1.5 px-2 py-1 rounded-xl transition-all ${
+                          isActive
+                            ? 'bg-sky-950/90 border border-sky-500/80 text-white shadow-xs'
+                            : 'bg-slate-800/70 hover:bg-slate-800 border border-slate-700/70 text-slate-300'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          data-testid={`select-floor-diamond-${layer.id}`}
+                          onClick={() => onSelectFloor(layer.id)}
+                          title={`Select ${layer.label}`}
+                          className="flex items-center gap-2.5 flex-1 min-w-0 text-left group"
+                        >
+                          {/* Isometric Diamond Plate */}
+                          <span
+                            className={`w-4 h-4 rotate-45 rounded-[3px] border-2 shrink-0 transition-all ${
+                              isActive
+                                ? 'bg-gradient-to-br from-[#38bdf8] to-[#0284c7] border-white shadow-[0_0_8px_rgba(56,189,248,0.75)] scale-110'
+                                : layer.visible
+                                ? 'bg-sky-900/60 border-sky-400/70 group-hover:border-sky-300'
+                                : 'bg-slate-900 border-slate-500 group-hover:border-slate-300'
+                            }`}
+                          />
+                          <span className="font-mono text-xs font-extrabold tracking-tight text-slate-100 shrink-0">
+                            {diamondCode}
+                          </span>
+                          <span className="text-[10px] text-slate-400 truncate">
+                            {layer.label.split('·')[0].trim()}
+                          </span>
+                        </button>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            data-testid={`toggle-floor-vis-${layer.id}`}
+                            onClick={() => onToggleFloorLayerVisibility(layer.id)}
+                            title={
+                              isActive
+                                ? 'Active editing floor layer'
+                                : layer.visible
+                                ? 'Hide reference layer in 3D view'
+                                : 'Show as ghost reference layer in 3D view'
+                            }
+                            className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] transition-colors ${
+                              isActive || layer.visible
+                                ? 'bg-sky-500/25 text-sky-200 border border-sky-400/50'
+                                : 'bg-slate-900 text-slate-500 border border-slate-700'
+                            }`}
+                          >
+                            {isActive || layer.visible ? '👁' : '·'}
+                          </button>
+                          {onRemoveFloorLayer && floorLayers.length > 1 && (
+                            <button
+                              type="button"
+                              data-testid={`remove-floor-layer-btn-${layer.id}`}
+                              onClick={() => onRemoveFloorLayer(layer.id)}
+                              title={`Remove ${layer.label}`}
+                              className="w-5 h-5 rounded-full bg-rose-950/80 hover:bg-rose-700 text-rose-300 hover:text-white border border-rose-700/60 flex items-center justify-center text-[10px] font-extrabold transition-colors"
+                            >
+                              −
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={onAddFloorLayer}
-                className="w-full py-1.5 px-3 rounded-full bg-gradient-to-r from-[#10b981] to-[#059669] hover:from-[#059669] hover:to-[#047857] text-white font-bold text-xs shadow-xs flex items-center justify-center gap-1.5 transition-all"
-              >
-                <span>+ Add Floor Layer</span>
-              </button>
-
+              {/* Bottom Pill Button from Sketch F: ( ADD NEW ) + Remove / Clear */}
               <div className="flex items-center gap-1.5">
-                <label htmlFor="active-floor-dropdown" className="text-[10px] font-semibold text-slate-500 shrink-0">
-                  Active:
-                </label>
+                <button
+                  type="button"
+                  data-testid="add-floor-layer-btn"
+                  onClick={onAddFloorLayer}
+                  className="flex-1 py-1.5 px-3 rounded-full bg-gradient-to-r from-[#10b981] to-[#059669] hover:from-[#059669] hover:to-[#047857] text-white font-extrabold text-xs tracking-wide shadow-xs flex items-center justify-center gap-1.5 transition-all border border-emerald-400/50"
+                >
+                  <span>ADD NEW</span>
+                </button>
+                {onRemoveFloorLayer && floorLayers.length > 1 && (
+                  <button
+                    type="button"
+                    data-testid="remove-active-floor-btn"
+                    onClick={() => onRemoveFloorLayer(currentFloor)}
+                    title="Remove currently active floor layer"
+                    className="py-1.5 px-2.5 rounded-full bg-rose-950/90 hover:bg-rose-800 text-rose-200 border border-rose-700/70 text-[10px] font-extrabold transition-colors shrink-0"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+
+              {/* Accessible Active Floor Dropdown & Clear Layer button */}
+              <div className="flex items-center justify-between gap-1.5 pt-0.5">
                 <select
                   id="active-floor-dropdown"
                   aria-label="Active Floor Layer"
@@ -461,7 +587,7 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                     e.currentTarget.blur();
                     onSelectFloor(e.target.value);
                   }}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-2 py-1 text-xs font-bold text-slate-800"
+                  className="flex-1 bg-slate-50 border border-slate-300 rounded-full px-2 py-0.5 text-[10px] font-bold text-slate-800 truncate"
                 >
                   {sortedLayersTopDown.map((layer) => (
                     <option key={layer.id} value={layer.id}>
@@ -469,63 +595,22 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                     </option>
                   ))}
                 </select>
+                <button
+                  type="button"
+                  onClick={onClearFloor}
+                  title="Clear all objects on active floor layer"
+                  className="py-0.5 px-2 rounded-full bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-[10px] font-semibold transition-colors shrink-0"
+                >
+                  Clear Floor
+                </button>
               </div>
-
-              <div className="flex flex-col gap-1 pr-0.5">
-                {sortedLayersTopDown.map((layer) => {
-                  const isActive = layer.id === currentFloor;
-                  return (
-                    <div
-                      key={layer.id}
-                      className={`flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-2xl text-xs transition-all ${
-                        isActive
-                          ? 'bg-gradient-to-r from-[#0ea5e9] to-[#0284c7] text-white font-bold shadow-xs'
-                          : 'bg-slate-100/90 hover:bg-slate-200/80 text-slate-700'
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => onToggleFloorLayerVisibility(layer.id)}
-                        title={
-                          isActive
-                            ? 'Active editing floor layer'
-                            : layer.visible
-                            ? 'Hide reference layer in 3D view'
-                            : 'Show as ghost reference layer in 3D view'
-                        }
-                        className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] ${
-                          isActive
-                            ? 'bg-white/25 text-white'
-                            : layer.visible
-                            ? 'bg-[#bae6fd] text-[#0369a1]'
-                            : 'bg-slate-200 text-slate-400'
-                        }`}
-                      >
-                        {isActive || layer.visible ? '👁' : '·'}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => onSelectFloor(layer.id)}
-                        className="flex-1 text-left truncate"
-                      >
-                        <span className="font-mono text-[10px] opacity-80 mr-1">{layer.shortCode}</span>
-                        <span>{layer.label.split('·')[0].trim()}</span>
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <button
-                type="button"
-                onClick={onClearFloor}
-                className="w-full py-1 px-2.5 rounded-full bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-[11px] font-semibold transition-colors"
-              >
-                Clear Active Layer
-              </button>
             </div>
           </StudioWindowFrame>
+        </div>
+      )}
+
+      {mode !== 'character' && mode !== 'soundboard' && (
+        <>
 
           {/* 3. BUILD MODE TOOLS WINDOW */}
           <StudioWindowFrame
@@ -897,10 +982,8 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                   [
                     { id: 'catalog', label: `Catalog (${filteredCatalog.length})` },
                     { id: 'sets', label: `📚 Asset Sets (${assetSets.length})` },
-                    { id: 'ai3d', label: 'Meshy Image-to-3D' },
-                    { id: 'texture', label: 'Flash-Lite Texture' },
-                    { id: 'lore', label: 'Scale Ref' },
-                    { id: 'models', label: '⚡ AI Models' }
+                    { id: 'blueprints', label: `📐 Room Blueprints (${roomBlueprints.length})` },
+                    { id: 'ai3d', label: '✨ AI Asset Gen' }
                   ] as const
                 ).map((t) => (
                   <button
@@ -918,6 +1001,293 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                   </button>
                 ))}
               </div>
+
+              {architectTab === 'blueprints' && (
+                <div
+                  data-testid="room-blueprints-panel"
+                  className="flex flex-col gap-2 pr-1 text-xs"
+                >
+                  {/* RECENT ROOM BLUEPRINTS SECTION WITH TOP-DOWN VISUAL LAYOUT PREVIEWS */}
+                  {recentRoomBlueprints.length > 0 && (
+                    <div
+                      data-testid="recent-blueprints-section"
+                      className="bg-gradient-to-r from-[#f0f9ff] to-[#ecfdf5] border border-[#bae6fd] rounded-2xl p-2 space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#0369a1]">
+                          ⏱ Recent Room Blueprints (Visual Top-Down Layout Previews)
+                        </span>
+                        <span className="text-[9px] font-mono text-slate-500">
+                          Click to Load onto {currentFloor.toUpperCase()}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                        {recentRoomBlueprints.map((bp) => {
+                          const preview =
+                            bp.topDownPreview ||
+                            generateTopDownRoomBlueprintPreview(bp.items, bp.boundingSize, bp.name);
+                          return (
+                            <div
+                              key={`recent_${bp.id}`}
+                              data-testid={`recent-blueprint-card-${bp.id}`}
+                              className="bg-white border border-sky-200 hover:border-sky-400 rounded-xl p-1.5 flex flex-col gap-1 shadow-2xs transition-all"
+                            >
+                              <div className="relative w-full h-[68px] rounded-lg overflow-hidden border border-slate-200 bg-slate-900">
+                                <img
+                                  src={bp.previewThumbnailUrl || preview.dataUrl}
+                                  alt={`Top-down layout preview of ${bp.name}`}
+                                  data-testid={`recent-blueprint-preview-${bp.id}`}
+                                  className="w-full h-full object-cover"
+                                />
+                                <span className="absolute bottom-1 right-1 px-1.5 py-0.2 rounded bg-slate-900/85 text-sky-300 text-[8px] font-mono font-bold">
+                                  {preview.roomSpanX}m×{preview.roomSpanZ}m · {bp.items.length}p
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="text-[10px] font-extrabold text-slate-800 truncate">
+                                  {bp.name}
+                                </span>
+                                <button
+                                  type="button"
+                                  data-testid={`recent-blueprint-load-btn-${bp.id}`}
+                                  onClick={() =>
+                                    onLoadRoomBlueprint(bp, bpOffsetX, bpOffsetZ, replaceFloorOnLoad)
+                                  }
+                                  className="px-2 py-0.5 rounded-full bg-[#0284c7] hover:bg-[#0369a1] text-white text-[9px] font-extrabold shrink-0"
+                                >
+                                  Load
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SAVE CURRENT FLOOR OR SELECTION AS ROOM BLUEPRINT */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-2 space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-extrabold text-slate-800">
+                        📐 Save &amp; Load Room Blueprints (L/S BP)
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          ref={blueprintFileInputRef}
+                          type="file"
+                          accept=".json,application/json"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                              onImportRoomBlueprintsJson(String(reader.result || ''));
+                            };
+                            reader.readAsText(file);
+                            e.target.value = '';
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => blueprintFileInputRef.current?.click()}
+                          className="px-2 py-0.5 rounded-full bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-[9px] font-bold"
+                        >
+                          Import .json
+                        </button>
+                        <button
+                          type="button"
+                          onClick={onExportAllRoomBlueprints}
+                          className="px-2 py-0.5 rounded-full bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-[9px] font-bold"
+                        >
+                          Export All ({roomBlueprints.length})
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <input
+                        type="text"
+                        data-testid="room-blueprint-name-input"
+                        value={bpName}
+                        onChange={(e) => setBpName(e.target.value)}
+                        placeholder="Blueprint Name..."
+                        className="bg-white border border-slate-300 rounded-full px-2.5 py-0.5 text-[11px] font-bold text-slate-800"
+                      />
+                      <input
+                        type="text"
+                        value={bpDescription}
+                        onChange={(e) => setBpDescription(e.target.value)}
+                        placeholder="Description..."
+                        className="bg-white border border-slate-300 rounded-full px-2.5 py-0.5 text-[11px] text-slate-700"
+                      />
+                      <input
+                        type="text"
+                        value={bpTagsInput}
+                        onChange={(e) => setBpTagsInput(e.target.value)}
+                        placeholder="Tags (comma separated)..."
+                        className="bg-white border border-slate-300 rounded-full px-2.5 py-0.5 text-[11px] font-mono text-slate-700"
+                      />
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-1.5 pt-0.5">
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          data-testid="save-floor-blueprint-btn"
+                          onClick={() =>
+                            onSaveRoomBlueprint(
+                              bpName.trim() || 'Custom Room Blueprint',
+                              bpDescription.trim(),
+                              false,
+                              parseBlueprintTagsInput(bpTagsInput)
+                            )
+                          }
+                          className="px-2.5 py-0.5 rounded-full bg-[#0284c7] hover:bg-[#0369a1] text-white text-[10px] font-extrabold"
+                        >
+                          + Save Entire Floor ({floorAssets.length})
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="save-selection-blueprint-btn"
+                          disabled={selectedCount === 0}
+                          onClick={() =>
+                            onSaveRoomBlueprint(
+                              bpName.trim() || 'Selected Room Blueprint',
+                              bpDescription.trim(),
+                              true,
+                              parseBlueprintTagsInput(bpTagsInput)
+                            )
+                          }
+                          className="px-2.5 py-0.5 rounded-full bg-[#10b981] hover:bg-[#059669] disabled:opacity-40 text-white text-[10px] font-extrabold"
+                        >
+                          + Save Selection ({selectedCount})
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 text-[10px]">
+                        <label className="flex items-center gap-1 font-semibold text-slate-600">
+                          <span>Offset X:</span>
+                          <input
+                            type="number"
+                            step={0.5}
+                            value={bpOffsetX}
+                            onChange={(e) => setBpOffsetX(Number(e.target.value) || 0)}
+                            className="w-12 bg-white border border-slate-300 rounded px-1 py-0.2 text-center font-mono"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1 font-semibold text-slate-600">
+                          <span>Z:</span>
+                          <input
+                            type="number"
+                            step={0.5}
+                            value={bpOffsetZ}
+                            onChange={(e) => setBpOffsetZ(Number(e.target.value) || 0)}
+                            className="w-12 bg-white border border-slate-300 rounded px-1 py-0.2 text-center font-mono"
+                          />
+                        </label>
+                        <label className="flex items-center gap-1 font-bold text-slate-700 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={replaceFloorOnLoad}
+                            onChange={(e) => setReplaceFloorOnLoad(e.target.checked)}
+                          />
+                          <span>Replace Floor</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SEARCH & SIZE FILTER FOR SAVED ROOM BLUEPRINTS */}
+                  <div className="flex flex-wrap items-center justify-between gap-1">
+                    <input
+                      type="text"
+                      data-testid="room-blueprint-search-input"
+                      value={roomBpSearchQuery}
+                      onChange={(e) => setRoomBpSearchQuery(e.target.value)}
+                      placeholder="Search Room Blueprints by name, description, or #tag..."
+                      className="flex-1 min-w-[180px] bg-slate-100 border border-slate-300 rounded-full px-2.5 py-0.5 text-[11px] text-slate-800"
+                    />
+                    <div className="flex items-center gap-0.5">
+                      {(['all', 'small', 'medium', 'large'] as const).map((sz) => (
+                        <button
+                          key={sz}
+                          type="button"
+                          onClick={() => setRoomSizeFilter(sz)}
+                          className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                            roomSizeFilter === sz
+                              ? 'bg-[#0284c7] text-white'
+                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          }`}
+                        >
+                          {sz}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* ROOM BLUEPRINTS GRID WITH VISUAL TOP-DOWN PREVIEWS */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 max-h-48 overflow-y-auto pr-0.5">
+                    {filteredRoomBlueprints.map((bp) => {
+                      const preview =
+                        bp.topDownPreview ||
+                        generateTopDownRoomBlueprintPreview(bp.items, bp.boundingSize, bp.name);
+                      return (
+                        <div
+                          key={bp.id}
+                          data-testid={`room-blueprint-card-${bp.id}`}
+                          className="p-2 rounded-2xl border border-slate-200 bg-white hover:border-sky-300 flex flex-col justify-between gap-1.5 shadow-2xs"
+                        >
+                          <div className="flex items-start gap-2">
+                            <img
+                              src={bp.previewThumbnailUrl || preview.dataUrl}
+                              alt={bp.name}
+                              className="w-16 h-12 rounded-lg border border-slate-200 object-cover shrink-0 bg-slate-900"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="font-bold text-slate-800 text-[11px] truncate">
+                                {bp.name}
+                              </div>
+                              <div className="text-[9px] text-slate-500 line-clamp-1">
+                                {bp.description}
+                              </div>
+                              <div className="text-[9px] font-mono text-sky-700 font-bold mt-0.5">
+                                {bp.boundingSize[0]}m × {bp.boundingSize[1]}m · {bp.items.length} items
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 pt-1 border-t border-slate-100">
+                            <button
+                              type="button"
+                              data-testid={`load-room-blueprint-btn-${bp.id}`}
+                              onClick={() =>
+                                onLoadRoomBlueprint(bp, bpOffsetX, bpOffsetZ, replaceFloorOnLoad)
+                              }
+                              className="flex-1 py-0.5 px-2 bg-[#0284c7] hover:bg-[#0369a1] text-white font-bold rounded-full text-[10px]"
+                            >
+                              + Load Blueprint
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onExportRoomBlueprint(bp)}
+                              className="py-0.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-full text-[9px]"
+                            >
+                              .json
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onDeleteRoomBlueprint(bp.id)}
+                              className="py-0.5 px-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-full text-[9px]"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {architectTab === 'sets' && (
                 <div
@@ -1195,6 +1565,7 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                   <div className="flex items-center justify-between gap-1">
                     <div className="relative flex-1 flex items-center">
                       <input
+                        ref={catalogSearchInputRef}
                         type="text"
                         data-testid="catalog-search-input"
                         value={searchQuery}
@@ -1235,7 +1606,7 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                       onClick={() => setArchitectTab('ai3d')}
                       className="px-2 py-0.5 rounded-full bg-[#e0f2fe] hover:bg-[#bae6fd] text-[#0369a1] text-[10px] font-bold whitespace-nowrap shrink-0"
                     >
-                      + Meshy 3D
+                      ✨ AI Asset Gen
                     </button>
                   </div>
 
