@@ -43,7 +43,12 @@ import {
   computeBuildPlacementPosition,
   DEFAULT_SNAP_GRID_SIZE,
   isInvisibleTriggerAsset,
-  computeCharacterCreatorWheelZoom
+  computeCharacterCreatorWheelZoom,
+  selectCulledPointLightIds,
+  PointLightCullCandidate,
+  MAX_ACTIVE_DYNAMIC_POINT_LIGHTS,
+  computeLightingCrossfadeState,
+  LIGHTING_CROSSFADE_DURATION_MS
 } from '../game/rules';
 import {
   buildAssetMeshGroup,
@@ -1832,18 +1837,101 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
         }
       });
 
-      // Proposal 1: Animate 60Hz Fluorescent Ballast Stutter, Warm Tungsten Lamp Pools & CRT Phosphor Shimmer
+      // Smooth 500ms Hinge Rotation / Pocket-Slide Animation for Doors & Secret Passages + 250ms Lighting Crossfades + PointLight Distance Culling
+      const wallClockMs = Date.now();
+      const camPosTuple: [number, number, number] = [
+        camera.position.x,
+        camera.position.y,
+        camera.position.z
+      ];
+
+      // Build unified PointLight candidate pool (per-room mood lights + interactive state lights) for WebGL distance culling
+      const lightCullCandidates: PointLightCullCandidate[] = [];
       for (let i = 0; i < activeMoodLightNodes.length; i++) {
         const node = activeMoodLightNodes[i];
-        const frame = computePerRoomMoodLightState(elapsed, node.spec.id, node.spec.kind);
-        node.light.intensity = frame.intensity;
-        node.light.color.set(frame.colorHex);
-        node.bulbMat.emissive.set(frame.colorHex);
-        node.bulbMat.emissiveIntensity = frame.isFlickerDrop ? 0.18 : 0.92;
+        lightCullCandidates.push({
+          id: `mood:${node.spec.id}`,
+          position: node.spec.position,
+          priority: node.spec.id === `mood_asset_${st.selectedAssetId}` ? 2 : 0
+        });
       }
+      for (let i = 0; i < dynamicAssetsGroup.children.length; i++) {
+        const child = dynamicAssetsGroup.children[i];
+        const aid = child.userData?.assetId as string | undefined;
+        if (aid) {
+          const hasInteractiveLight = child.getObjectByName('interactiveStateLight');
+          if (hasInteractiveLight) {
+            lightCullCandidates.push({
+              id: `interactive:${aid}`,
+              position: [child.position.x, child.position.y, child.position.z],
+              priority: aid === st.selectedAssetId ? 3 : 1
+            });
+          }
+        }
+      }
+      const culledLightPool = selectCulledPointLightIds(
+        lightCullCandidates,
+        camPosTuple,
+        MAX_ACTIVE_DYNAMIC_POINT_LIGHTS
+      );
 
-      // Smooth 500ms Hinge Rotation / Pocket-Slide Animation for Doors & Secret Passages (Proposals 1 & 2)
-      const wallClockMs = Date.now();
+      // Proposal 1: Animate 60Hz Fluorescent Ballast Stutter, Warm Tungsten Lamp Pools & CRT Phosphor Shimmer with 250ms Crossfades & Distance Culling
+      moodLightsGroup.visible = st.lightingEnabled !== false;
+      for (let i = 0; i < activeMoodLightNodes.length; i++) {
+        const node = activeMoodLightNodes[i];
+        const linkedAssetId = node.spec.id.startsWith('mood_asset_')
+          ? node.spec.id.replace('mood_asset_', '')
+          : undefined;
+        const linkedAsset = linkedAssetId
+          ? st.assets.find((a) => a.id === linkedAssetId)
+          : undefined;
+
+        const effectiveNodeFps =
+          linkedAsset?.customAnimationFps ||
+          node.spec.customAnimationFps ||
+          st.globalAnimationFps ||
+          DEFAULT_GLOBAL_ANIMATION_FPS;
+        let targetColorHex = linkedAsset?.color || node.spec.baseColorHex;
+        let targetMult = Number(
+          linkedAsset?.emissionIntensity ??
+            linkedAsset?.lightIntensity ??
+            node.spec.intensityMultiplier ??
+            1.0
+        );
+
+        if (
+          linkedAsset?.lightingTransitionStartMs &&
+          wallClockMs - linkedAsset.lightingTransitionStartMs < LIGHTING_CROSSFADE_DURATION_MS
+        ) {
+          const cf = computeLightingCrossfadeState(
+            {
+              colorHex: linkedAsset.prevLightColorHex || node.spec.baseColorHex,
+              intensity: linkedAsset.prevEmissionIntensity ?? 1.0
+            },
+            {
+              colorHex: targetColorHex,
+              intensity: targetMult
+            },
+            wallClockMs - linkedAsset.lightingTransitionStartMs,
+            LIGHTING_CROSSFADE_DURATION_MS
+          );
+          targetColorHex = cf.colorHex;
+          targetMult = cf.intensity;
+        }
+
+        const frame = computePerRoomMoodLightState(elapsed, node.spec.id, node.spec.kind, {
+          intensityMultiplier: targetMult,
+          baseColorHex: targetColorHex,
+          effectiveFps: effectiveNodeFps
+        });
+        node.light.visible =
+          st.lightingEnabled !== false && culledLightPool.activeIds.has(`mood:${node.spec.id}`);
+        node.light.intensity = frame.intensity;
+        node.light.color.lerp(new THREE.Color(frame.colorHex), 0.35);
+        node.bulbMat.emissive.lerp(new THREE.Color(frame.colorHex), 0.35);
+        const bulbMult = Math.max(0.1, targetMult);
+        node.bulbMat.emissiveIntensity = (frame.isFlickerDrop ? 0.18 : 0.92) * bulbMult;
+      }
 
       const updateGroupHinges = (grp: THREE.Group) => {
         for (let i = 0; i < grp.children.length; i++) {
@@ -1888,58 +1976,140 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
         for (let i = 0; i < grp.children.length; i++) {
           const child = grp.children[i];
           if (child.userData?.isUnkemptOrAged && child.userData?.assetId) {
-            const asset = child.userData.asset as PlacedAsset | undefined;
-            const effectiveFps = asset?.customAnimationFps || st.globalAnimationFps || DEFAULT_GLOBAL_ANIMATION_FPS;
+            const asset =
+              st.assets.find((a) => a.id === child.userData.assetId) ||
+              (child.userData.asset as PlacedAsset | undefined);
+            const effectiveFps =
+              asset?.customAnimationFps ||
+              asset?.customFlickerFps ||
+              st.globalAnimationFps ||
+              DEFAULT_GLOBAL_ANIMATION_FPS;
             const sample = sampleUnkemptFlickerIntensity(
               elapsed,
               effectiveFps,
               child.userData.assetId
             );
+            child.userData.currentUnkemptMultiplier = sample.emissiveMultiplier;
+            const userEmissionMult = Math.max(
+              0.1,
+              Number(asset?.emissionIntensity ?? asset?.lightIntensity ?? 1.0)
+            );
             child.traverse((node) => {
               const mesh = node as THREE.Mesh;
               if (mesh.isMesh && mesh.material) {
                 const mat = mesh.material as THREE.MeshStandardMaterial;
-                if (mesh.userData?.isTvScreen && child.userData?.asset?.isActivated) {
-                  mat.emissiveIntensity = 1.35 * sample.brightnessMultiplier;
+                if (mesh.userData?.isTvScreen && asset?.isActivated) {
+                  mat.emissiveIntensity = 1.35 * userEmissionMult * sample.brightnessMultiplier;
                 } else if (mat.emissive && mat.emissiveIntensity > 0) {
-                  mat.emissiveIntensity = sample.isDip ? 0.16 : 0.45 * sample.brightnessMultiplier;
+                  const baseEmissive =
+                    mesh.userData?.baseEmissiveIntensity !== undefined
+                      ? Number(mesh.userData.baseEmissiveIntensity)
+                      : 0.45 * userEmissionMult;
+                  if (mesh.userData?.baseEmissiveIntensity === undefined) {
+                    mesh.userData.baseEmissiveIntensity = baseEmissive;
+                  }
+                  mat.emissiveIntensity = sample.isDip
+                    ? 0.16 * userEmissionMult
+                    : baseEmissive * sample.brightnessMultiplier;
                 }
               }
             });
+          } else if (child.userData) {
+            child.userData.currentUnkemptMultiplier = 1.0;
           }
         }
       };
       updateUnkemptFlickerOnGroup(dynamicAssetsGroup);
       updateUnkemptFlickerOnGroup(isolatedAssetGroup);
 
-      // Pulse / Flicker Animation for Light-Emitting Assets (Lamps, TVs, Glowing Screens) synchronized to globalAnimationFps
-      const updateLightEmittingPulseOnGroup = (grp: THREE.Group) => {
+      // Pulse / Flicker Animation for Light-Emitting Assets (Lamps, TVs, Glowing Screens) synchronized to globalAnimationFps + 250ms Crossfades & Culling
+      const updateLightEmittingPulseOnGroup = (grp: THREE.Group, isIsolatedGroup = false) => {
         for (let i = 0; i < grp.children.length; i++) {
           const child = grp.children[i];
           if (child.userData?.assetId) {
-            const asset = child.userData.asset as PlacedAsset | undefined;
-            if (asset && asset.isActivated) {
-              const effectiveFps = asset.customAnimationFps || st.globalAnimationFps || DEFAULT_GLOBAL_ANIMATION_FPS;
+            const asset =
+              st.assets.find((a) => a.id === child.userData.assetId) ||
+              (child.userData.asset as PlacedAsset | undefined);
+            const shouldPulse =
+              asset &&
+              (asset.isActivated ||
+                asset.isLightEmitting ||
+                asset.category === 'lighting' ||
+                Boolean(asset.lightingPreset));
+            if (asset && shouldPulse) {
+              const effectiveFps =
+                asset.customAnimationFps ||
+                asset.customFlickerFps ||
+                st.globalAnimationFps ||
+                DEFAULT_GLOBAL_ANIMATION_FPS;
               const pulseSample = sampleLightEmittingPulseIntensity(
                 elapsed,
                 effectiveFps,
                 child.userData.assetId
               );
+              const unkemptMult = Number(child.userData?.currentUnkemptMultiplier ?? 1.0);
+              let userEmissionMult = Math.max(
+                0.1,
+                Number(asset.emissionIntensity ?? asset.lightIntensity ?? 1.0)
+              );
+              let crossfadeColorHex: string | null = null;
+              if (
+                asset.lightingTransitionStartMs &&
+                wallClockMs - asset.lightingTransitionStartMs < LIGHTING_CROSSFADE_DURATION_MS
+              ) {
+                const cf = computeLightingCrossfadeState(
+                  {
+                    colorHex: asset.prevLightColorHex || asset.color || '#fde68a',
+                    intensity: asset.prevEmissionIntensity ?? 1.0
+                  },
+                  {
+                    colorHex: asset.color || '#fde68a',
+                    intensity: userEmissionMult
+                  },
+                  wallClockMs - asset.lightingTransitionStartMs,
+                  LIGHTING_CROSSFADE_DURATION_MS
+                );
+                userEmissionMult = Math.max(0.1, cf.intensity);
+                crossfadeColorHex = cf.colorHex;
+              }
+
               child.traverse((node) => {
                 const obj = node as THREE.Object3D;
                 if ((obj as THREE.PointLight).isPointLight && obj.name === 'interactiveStateLight') {
                   const pt = obj as THREE.PointLight;
+                  const isActiveInPool =
+                    isIsolatedGroup || culledLightPool.activeIds.has(`interactive:${asset.id}`);
+                  pt.visible = st.lightingEnabled !== false && isActiveInPool;
+                  if (crossfadeColorHex) {
+                    pt.color.lerp(new THREE.Color(crossfadeColorHex), 0.45);
+                  }
                   const baseInt = pt.userData?.baseIntensity ?? (pt.intensity || 1.0);
                   if (pt.userData?.baseIntensity === undefined) pt.userData.baseIntensity = baseInt;
-                  pt.intensity = baseInt * pulseSample.lightIntensityMultiplier;
+                  pt.intensity = baseInt * unkemptMult * pulseSample.lightIntensityMultiplier;
                 }
                 const mesh = obj as THREE.Mesh;
                 if (mesh.isMesh && mesh.material) {
                   const mat = mesh.material as THREE.MeshStandardMaterial;
-                  if (mesh.userData?.isTvScreen) {
-                    mat.emissiveIntensity = 1.45 * pulseSample.emissiveIntensityMultiplier;
+                  if (crossfadeColorHex && mat.emissive && mat.emissiveIntensity > 0) {
+                    mat.emissive.lerp(new THREE.Color(crossfadeColorHex), 0.45);
+                  }
+                  if (mesh.userData?.isTvScreen && asset.isActivated) {
+                    const baseScreenInt = Number(
+                      mesh.userData?.baseEmissiveIntensity ?? 1.45 * userEmissionMult
+                    );
+                    mat.emissiveIntensity = Math.min(
+                      3.5,
+                      baseScreenInt * unkemptMult * pulseSample.emissiveIntensityMultiplier
+                    );
                   } else if (mat.emissive && mat.emissiveIntensity > 0) {
-                    mat.emissiveIntensity = Math.min(2.0, mat.emissiveIntensity * pulseSample.emissiveIntensityMultiplier);
+                    if (mesh.userData?.baseEmissiveIntensity === undefined) {
+                      mesh.userData.baseEmissiveIntensity = mat.emissiveIntensity;
+                    }
+                    const baseEmissive = Number(mesh.userData.baseEmissiveIntensity);
+                    mat.emissiveIntensity = Math.min(
+                      3.5,
+                      baseEmissive * unkemptMult * pulseSample.emissiveIntensityMultiplier
+                    );
                   }
                 }
               });
@@ -1947,8 +2117,8 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
           }
         }
       };
-      updateLightEmittingPulseOnGroup(dynamicAssetsGroup);
-      updateLightEmittingPulseOnGroup(isolatedAssetGroup);
+      updateLightEmittingPulseOnGroup(dynamicAssetsGroup, false);
+      updateLightEmittingPulseOnGroup(isolatedAssetGroup, true);
 
       // Periodically project the primary selected asset's 3D position to 2D screen coordinates
       // so the [F] Quick Edit floating window sits immediately to the right of the asset

@@ -101,6 +101,10 @@ export interface PlacedAsset {
   lightIntensity?: number;
   lightingPreset?: string;
   customAnimationFps?: number;
+  customFlickerFps?: number;
+  prevLightColorHex?: string;
+  prevEmissionIntensity?: number;
+  lightingTransitionStartMs?: number;
 }
 
 export type InvisibleTriggerEventType =
@@ -2105,9 +2109,20 @@ export function batchModifySelectedAssets(
     lightIntensity?: number;
     isLightEmitting?: boolean;
     lightingPreset?: string;
+    customAnimationFps?: number | null;
+    customFlickerFps?: number | null;
   }
 ): PlacedAsset[] {
   const idSet = new Set(selectedIds);
+  const hasCustomFpsPatch =
+    Object.prototype.hasOwnProperty.call(patch, 'customAnimationFps') ||
+    Object.prototype.hasOwnProperty.call(patch, 'customFlickerFps');
+  const rawFpsVal = patch.customAnimationFps !== undefined ? patch.customAnimationFps : patch.customFlickerFps;
+  const resolvedCustomFps =
+    rawFpsVal === null || rawFpsVal === undefined || rawFpsVal <= 0
+      ? undefined
+      : Number(rawFpsVal);
+
   return assets.map((a) => {
     if (!idSet.has(a.id)) return a;
     let nextDims: [number, number, number] = [...a.dimensions] as [number, number, number];
@@ -2124,8 +2139,55 @@ export function batchModifySelectedAssets(
         clampDimension(Math.round(a.dimensions[2] * patch.scaleMultiplier * 100) / 100, 0.2, 24)
       ];
     }
+
+    const nextFps = hasCustomFpsPatch
+      ? resolvedCustomFps
+      : (a.customAnimationFps ?? a.customFlickerFps);
+
+    // Sync emissive composite sub-parts when a lighting preset or custom light color is applied
+    let nextCompositeParts = a.compositeParts;
+    if (
+      a.compositeParts &&
+      a.compositeParts.length > 0 &&
+      patch.color &&
+      (patch.lightingPreset !== undefined || patch.isLightEmitting || a.isLightEmitting || a.category === 'lighting')
+    ) {
+      nextCompositeParts = a.compositeParts.map((part) => {
+        const pid = (part.id || '').toLowerCase();
+        if (
+          Boolean(part.emissive) ||
+          pid.includes('shade') ||
+          pid.includes('bulb') ||
+          pid.includes('lens') ||
+          pid.includes('screen') ||
+          pid.includes('crt') ||
+          pid.includes('phosphor') ||
+          pid.includes('display') ||
+          pid.includes('coil') ||
+          pid.includes('globe')
+        ) {
+          return {
+            ...part,
+            emissive: patch.color
+          };
+        }
+        return part;
+      });
+    }
+
+    const isLightingPatch =
+      patch.lightingPreset !== undefined ||
+      patch.emissionIntensity !== undefined ||
+      patch.lightIntensity !== undefined ||
+      (patch.color !== undefined && (patch.isLightEmitting || a.isLightEmitting || a.category === 'lighting'));
+
     return {
       ...a,
+      prevLightColorHex: isLightingPatch ? (a.color || '#fde68a') : a.prevLightColorHex,
+      prevEmissionIntensity: isLightingPatch
+        ? Number(a.emissionIntensity ?? a.lightIntensity ?? 1.0)
+        : a.prevEmissionIntensity,
+      lightingTransitionStartMs: isLightingPatch ? Date.now() : a.lightingTransitionStartMs,
       color: patch.color ?? a.color,
       textureId: patch.textureId ?? a.textureId,
       dimensions: nextDims,
@@ -2137,7 +2199,9 @@ export function batchModifySelectedAssets(
       lightIntensity: patch.lightIntensity !== undefined ? patch.lightIntensity : a.lightIntensity,
       isLightEmitting: patch.isLightEmitting !== undefined ? patch.isLightEmitting : a.isLightEmitting,
       lightingPreset: patch.lightingPreset !== undefined ? patch.lightingPreset : a.lightingPreset,
-      customAnimationFps: patch.customAnimationFps !== undefined ? patch.customAnimationFps : a.customAnimationFps
+      customAnimationFps: nextFps,
+      customFlickerFps: nextFps,
+      compositeParts: nextCompositeParts
     };
   });
 }
@@ -3952,8 +4016,14 @@ export interface RoomBlueprintItem {
   textureId: TexturePresetId;
   isSecretPassage?: boolean;
   isOpen?: boolean;
+  isActivated?: boolean;
   collidable: boolean;
   compositeParts?: CompositeSubPart[];
+  isLightEmitting?: boolean;
+  emissionIntensity?: number;
+  lightIntensity?: number;
+  lightingPreset?: string;
+  customAnimationFps?: number;
 }
 
 export interface TopDownRoomPreviewItem {
@@ -4475,8 +4545,14 @@ export function createRoomBlueprintFromAssets(
     textureId: a.textureId,
     isSecretPassage: a.isSecretPassage,
     isOpen: Boolean(a.isOpen),
+    isActivated: Boolean(a.isActivated),
     collidable: a.collidable,
-    compositeParts: a.compositeParts ? a.compositeParts.map((p) => ({ ...p })) : undefined
+    compositeParts: a.compositeParts ? a.compositeParts.map((p) => ({ ...p })) : undefined,
+    isLightEmitting: a.isLightEmitting,
+    emissionIntensity: a.emissionIntensity,
+    lightIntensity: a.lightIntensity,
+    lightingPreset: a.lightingPreset,
+    customAnimationFps: a.customAnimationFps ?? a.customFlickerFps
   }));
 
   const topDownPreview = generateTopDownRoomBlueprintPreview(items, [spanX, spanZ], cleanName);
@@ -4530,8 +4606,15 @@ export function instantiateRoomBlueprintOnFloor(
       textureId: item.textureId,
       isSecretPassage: item.isSecretPassage,
       isOpen: Boolean(item.isOpen),
+      isActivated: Boolean(item.isActivated),
       collidable: item.collidable,
-      compositeParts: item.compositeParts ? item.compositeParts.map((p) => ({ ...p })) : undefined
+      compositeParts: item.compositeParts ? item.compositeParts.map((p) => ({ ...p })) : undefined,
+      isLightEmitting: item.isLightEmitting,
+      emissionIntensity: item.emissionIntensity,
+      lightIntensity: item.lightIntensity,
+      lightingPreset: item.lightingPreset,
+      customAnimationFps: item.customAnimationFps,
+      customFlickerFps: item.customAnimationFps
     };
   });
 }
@@ -5928,6 +6011,9 @@ export interface MoodLightEmitterSpec {
   baseColorHex: string;
   baseIntensity: number;
   distance: number;
+  intensityMultiplier?: number;
+  customAnimationFps?: number;
+  assetId?: string;
 }
 
 export interface ComputedMoodLightFrame {
@@ -5943,18 +6029,35 @@ export interface ComputedMoodLightFrame {
  * - 60Hz failing fluorescent ballast tubes in corridors (intermittent stutter dips)
  * - Warm aged tungsten pool lights around desk/floor lamps and sconces
  * - Late-70s CRT TV / 1981 amber terminal phosphor scanline shimmer
+ * Honors optional user overrides (`intensityMultiplier`, `baseColorHex`, and `effectiveFps` quantization).
  */
 export function computePerRoomMoodLightState(
   timeSec: number,
   emitterId: string,
-  kind: RoomMoodLightKind
+  kind: RoomMoodLightKind,
+  options?: {
+    intensityMultiplier?: number;
+    baseColorHex?: string;
+    effectiveFps?: number;
+  }
 ): ComputedMoodLightFrame {
   let hash = 0;
   for (let i = 0; i < emitterId.length; i++) {
     hash = (hash * 31 + emitterId.charCodeAt(i)) % 997;
   }
   const phaseOffset = (hash % 100) * 0.07;
-  const t = Math.max(0, timeSec) + phaseOffset;
+  const rawTime = Math.max(0, timeSec);
+  const fps =
+    options?.effectiveFps && Number.isFinite(options.effectiveFps) && options.effectiveFps > 0
+      ? options.effectiveFps
+      : 0;
+  const quantizedTime = fps > 0 ? Math.floor(rawTime * fps) / fps : rawTime;
+  const t = quantizedTime + phaseOffset;
+  const mult = Math.max(0.1, Math.min(3.0, Number(options?.intensityMultiplier ?? 1.0)));
+  const customColor =
+    options?.baseColorHex && /^#[0-9a-f]{3,8}$/i.test(options.baseColorHex.trim())
+      ? options.baseColorHex.trim()
+      : undefined;
 
   if (kind === 'fluorescent_60hz') {
     // 60Hz mains hum modulation + intermittent failing starter ballast drop every ~4.5 seconds
@@ -5964,12 +6067,12 @@ export function computePerRoomMoodLightState(
       (cyclePos > 2.04 && cyclePos < 2.11) ||
       (cyclePos > 4.15 && cyclePos < 4.22);
     const mainsHum = Math.sin(t * 120 * Math.PI) * 0.06;
-    const intensity = inBallastStutter
+    const rawIntensity = inBallastStutter
       ? Math.max(0.12, 0.22 + mainsHum)
-      : Math.max(0.45, Number((0.92 + mainsHum).toFixed(3)));
+      : Math.max(0.45, 0.92 + mainsHum);
     return {
-      intensity,
-      colorHex: inBallastStutter ? '#6e7868' : '#a8b89e',
+      intensity: Number((rawIntensity * mult).toFixed(3)),
+      colorHex: customColor || (inBallastStutter ? '#6e7868' : '#a8b89e'),
       distance: 9.5,
       decay: 1.7,
       isFlickerDrop: inBallastStutter
@@ -5979,9 +6082,10 @@ export function computePerRoomMoodLightState(
   if (kind === 'crt_phosphor') {
     const scanRipple = Math.sin(t * 24.0) * 0.05 + Math.cos(t * 7.3) * 0.04;
     const isAmber = emitterId.toLowerCase().includes('terminal') || emitterId.toLowerCase().includes('pc');
+    const rawIntensity = Math.max(0.35, 0.68 + scanRipple);
     return {
-      intensity: Number(Math.max(0.35, 0.68 + scanRipple).toFixed(3)),
-      colorHex: isAmber ? '#c27d38' : '#4d8a68',
+      intensity: Number((rawIntensity * mult).toFixed(3)),
+      colorHex: customColor || (isAmber ? '#c27d38' : '#4d8a68'),
       distance: 4.8,
       decay: 2.0,
       isFlickerDrop: false
@@ -5991,9 +6095,10 @@ export function computePerRoomMoodLightState(
   // Default: 'tungsten_lamp' — warm late-70s low-wattage incandescent pool with gentle voltage sag
   const voltageBreath = Math.sin(t * 2.4) * 0.04 + Math.sin(t * 11.5) * 0.015;
   const microSag = (t % 7.2) > 6.95 ? -0.18 : 0;
+  const rawIntensity = Math.max(0.3, 1.12 + voltageBreath + microSag);
   return {
-    intensity: Number(Math.max(0.3, 1.12 + voltageBreath + microSag).toFixed(3)),
-    colorHex: '#d4944e',
+    intensity: Number((rawIntensity * mult).toFixed(3)),
+    colorHex: customColor || '#d4944e',
     distance: 7.5,
     decay: 1.85,
     isFlickerDrop: microSag < 0
@@ -6016,7 +6121,8 @@ export function extractMoodLightEmittersFromAssets(
       position: [0, 2.75, -3.5],
       baseColorHex: '#a8b89e',
       baseIntensity: 0.92,
-      distance: 9.5
+      distance: 9.5,
+      intensityMultiplier: 1.0
     },
     {
       id: `corridor_fluor_${floor}_south`,
@@ -6025,7 +6131,8 @@ export function extractMoodLightEmittersFromAssets(
       position: [0, 2.75, 3.5],
       baseColorHex: '#a8b89e',
       baseIntensity: 0.92,
-      distance: 9.5
+      distance: 9.5,
+      intensityMultiplier: 1.0
     }
   ];
 
@@ -6045,8 +6152,24 @@ export function extractMoodLightEmittersFromAssets(
       lowerName.includes('tv') ||
       lowerName.includes('terminal') ||
       lowerName.includes('computer');
-    const customColor = asset.color && asset.color !== '#592820' && asset.color !== '#18221c' ? asset.color : null;
-    const intensityMultiplier = Number(asset.emissionIntensity ?? asset.lightIntensity ?? 1.0);
+    const presetMatch = asset.lightingPreset
+      ? LIGHTING_PRESETS.find((p) => p.id === asset.lightingPreset)
+      : undefined;
+    // Use preset color if selected, or custom color when lightingPreset/isLightEmitting is configured
+    const customColor = presetMatch
+      ? presetMatch.color
+      : (asset.lightingPreset || asset.isLightEmitting || asset.category === 'lighting') &&
+        asset.color &&
+        asset.color !== '#592820' &&
+        asset.color !== '#18221c' &&
+        asset.color !== '#3d2817'
+      ? asset.color
+      : null;
+    const intensityMultiplier = Math.max(
+      0.1,
+      Math.min(3.0, Number(asset.emissionIntensity ?? asset.lightIntensity ?? presetMatch?.intensity ?? 1.0))
+    );
+    const customFps = asset.customAnimationFps ?? asset.customFlickerFps;
 
     if (isLightAsset) {
       emitters.push({
@@ -6060,7 +6183,10 @@ export function extractMoodLightEmittersFromAssets(
         ],
         baseColorHex: customColor || '#d4944e',
         baseIntensity: Number((1.12 * intensityMultiplier).toFixed(2)),
-        distance: 7.5
+        distance: 7.5,
+        intensityMultiplier,
+        customAnimationFps: customFps,
+        assetId: asset.id
       });
     } else if (isScreenAsset) {
       emitters.push({
@@ -6074,7 +6200,10 @@ export function extractMoodLightEmittersFromAssets(
         ],
         baseColorHex: customColor || (lowerName.includes('terminal') ? '#c27d38' : '#4d8a68'),
         baseIntensity: Number((0.68 * intensityMultiplier).toFixed(2)),
-        distance: 4.8
+        distance: 4.8,
+        intensityMultiplier,
+        customAnimationFps: customFps,
+        assetId: asset.id
       });
     }
   }
@@ -10465,6 +10594,11 @@ export interface AssetClipboardItem {
   era?: '1970s' | '1980s' | '1990s' | 'timeless';
   predecessor1978Id?: string;
   paired1990sId?: string;
+  isLightEmitting?: boolean;
+  emissionIntensity?: number;
+  lightIntensity?: number;
+  lightingPreset?: string;
+  customAnimationFps?: number;
 }
 
 export interface AssetClipboardPayload {
@@ -10713,12 +10847,18 @@ export function copySelectedAssetsToClipboard(
     isSecretPassage: a.isSecretPassage,
     hingeSwingMode: a.hingeSwingMode,
     isOpen: Boolean(a.isOpen),
+    isActivated: Boolean(a.isActivated),
     collidable: a.collidable,
     compositeParts: a.compositeParts ? a.compositeParts.map((p) => ({ ...p })) : undefined,
     tags: a.tags ? [...a.tags] : undefined,
     soundPresetId: a.soundPresetId,
     pairedVariantId: a.pairedVariantId,
-    conditionVariant: a.conditionVariant
+    conditionVariant: a.conditionVariant,
+    isLightEmitting: a.isLightEmitting,
+    emissionIntensity: a.emissionIntensity,
+    lightIntensity: a.lightIntensity,
+    lightingPreset: a.lightingPreset,
+    customAnimationFps: a.customAnimationFps ?? a.customFlickerFps
   }));
 
   return {
@@ -10789,12 +10929,19 @@ export function pasteAssetsFromClipboard(
       isSecretPassage: item.isSecretPassage,
       hingeSwingMode: item.hingeSwingMode,
       isOpen: Boolean(item.isOpen),
+      isActivated: Boolean(item.isActivated),
       collidable: item.collidable,
       compositeParts: item.compositeParts ? item.compositeParts.map((p) => ({ ...p })) : undefined,
       tags: item.tags ? [...item.tags] : undefined,
       soundPresetId: item.soundPresetId,
       pairedVariantId: item.pairedVariantId,
-      conditionVariant: item.conditionVariant
+      conditionVariant: item.conditionVariant,
+      isLightEmitting: item.isLightEmitting,
+      emissionIntensity: item.emissionIntensity,
+      lightIntensity: item.lightIntensity,
+      lightingPreset: item.lightingPreset,
+      customAnimationFps: item.customAnimationFps,
+      customFlickerFps: item.customAnimationFps
     };
   });
 
@@ -11612,13 +11759,33 @@ export function evaluateInvisibleTriggersAtPosition(
     };
   }
 
+  const hasLightsFlickerEvent = eventsFired.some((e) => e.eventType === 'lights_flicker');
   const finalAssets =
-    secretDoorsToOpen.size > 0
-      ? firstPassAssets.map((a) =>
-          secretDoorsToOpen.has(a.id)
-            ? { ...initiateAssetHingeToggle(a, Date.now()), isOpen: true }
-            : a
-        )
+    secretDoorsToOpen.size > 0 || hasLightsFlickerEvent
+      ? firstPassAssets.map((a) => {
+          if (secretDoorsToOpen.has(a.id)) {
+            return { ...initiateAssetHingeToggle(a, Date.now()), isOpen: true };
+          }
+          if (
+            hasLightsFlickerEvent &&
+            a.floor === currentFloor &&
+            !isInvisibleTriggerAsset(a) &&
+            (a.category === 'lighting' ||
+              Boolean(a.isLightEmitting) ||
+              /lamp|sconce|chandelier|light|exit_sign|crt|tv|terminal/i.test(
+                `${a.name} ${a.subType}`
+              ))
+          ) {
+            return {
+              ...a,
+              isActivated: true,
+              isLightEmitting: true,
+              customAnimationFps: a.customAnimationFps || 6,
+              customFlickerFps: a.customFlickerFps || 6
+            };
+          }
+          return a;
+        })
       : firstPassAssets;
 
   return {
@@ -11924,6 +12091,7 @@ export function computeAssetInteractionVisualState(
       screenEmissiveIntensity: 0,
       emissiveIntensity: 0,
       emitsLight: false,
+      isLightEmitting: false,
       lightColorHex: '#ffffff',
       lightIntensity: 0,
       lightDistance: 0,
@@ -11937,6 +12105,26 @@ export function computeAssetInteractionVisualState(
   const name = (asset.name || '').toLowerCase();
   const cat = asset.category;
   const isActivated = Boolean(asset.isActivated);
+  const presetMatch = asset.lightingPreset
+    ? LIGHTING_PRESETS.find((p) => p.id === asset.lightingPreset)
+    : undefined;
+  const hasExplicitLightConfig =
+    Boolean(asset.lightingPreset) ||
+    typeof asset.emissionIntensity === 'number' ||
+    typeof asset.lightIntensity === 'number';
+  const intensityScale = Math.max(
+    0.1,
+    Math.min(3.0, Number(asset.emissionIntensity ?? asset.lightIntensity ?? presetMatch?.intensity ?? 1.0))
+  );
+  const customPresetColor = presetMatch
+    ? presetMatch.color
+    : hasExplicitLightConfig &&
+      asset.color &&
+      asset.color !== '#592820' &&
+      asset.color !== '#3d2817' &&
+      asset.color !== '#18221c'
+    ? asset.color
+    : undefined;
 
   if (asset.isSecretPassage || cat === 'door' || cat === 'secret_wall') {
     const isOpen = Boolean(asset.isOpen);
@@ -11951,6 +12139,7 @@ export function computeAssetInteractionVisualState(
       screenEmissiveIntensity: 0,
       emissiveIntensity: 0,
       emitsLight: false,
+      isLightEmitting: false,
       lightColorHex: '#f59e0b',
       lightIntensity: 0,
       lightDistance: 0,
@@ -11960,24 +12149,28 @@ export function computeAssetInteractionVisualState(
     };
   }
 
-  // 1. Television / CRT TV: Interacting turns the screen a glowing white "on" state!
+  // 1. Television / CRT TV: Interacting turns the screen a glowing white "on" state (or custom preset glow)!
   if (isTvOrCrtScreenAsset(asset)) {
-    const screenEmissiveIntensity = isActivated ? 1.45 : 0.06;
-    const lightIntensity = isActivated ? 1.35 : 0;
+    const activeOrPreset = isActivated || hasExplicitLightConfig;
+    const baseEmissive = isActivated ? 1.45 : hasExplicitLightConfig ? 0.85 : 0.06;
+    const screenEmissiveIntensity = Number((baseEmissive * intensityScale).toFixed(2));
+    const lightIntensity = activeOrPreset ? Number(((isActivated ? 1.35 : 0.9) * intensityScale).toFixed(2)) : 0;
+    const activeGlowColor = isActivated ? (customPresetColor || '#ffffff') : (customPresetColor || '#4d8a68');
     const statusLabel = isActivated ? 'ON · WHITE SCREEN' : 'OFF · SCREEN DARK';
     return {
       isInteractive: true,
       interactionKind: 'tv_screen',
       isActivated,
       screenState: isActivated ? 'white_on' : 'off',
-      screenColorHex: isActivated ? '#ffffff' : '#18221c',
-      screenEmissiveHex: isActivated ? '#ffffff' : '#0a120d',
+      screenColorHex: isActivated ? (customPresetColor || '#ffffff') : '#18221c',
+      screenEmissiveHex: isActivated ? activeGlowColor : (customPresetColor || '#0a120d'),
       screenEmissiveIntensity,
       emissiveIntensity: screenEmissiveIntensity,
       emitsLight: lightIntensity > 0,
-      lightColorHex: '#ffffff',
+      isLightEmitting: lightIntensity > 0 || Boolean(asset.isLightEmitting),
+      lightColorHex: activeGlowColor,
       lightIntensity,
-      lightDistance: isActivated ? 5.5 : 0,
+      lightDistance: activeOrPreset ? 5.5 : 0,
       statusLabel,
       statusSummary: statusLabel,
       actionPromptLabel: isActivated ? '📺 Turn TV OFF [E]' : '📺 Turn TV ON (White Screen) [E]'
@@ -11994,22 +12187,26 @@ export function computeAssetInteractionVisualState(
     name.includes('computer') ||
     name.includes('console')
   ) {
-    const screenEmissiveIntensity = isActivated ? 1.15 : 0.08;
-    const lightIntensity = isActivated ? 0.95 : 0;
+    const activeOrPreset = isActivated || hasExplicitLightConfig;
+    const baseEmissive = isActivated ? 1.15 : hasExplicitLightConfig ? 0.75 : 0.08;
+    const screenEmissiveIntensity = Number((baseEmissive * intensityScale).toFixed(2));
+    const lightIntensity = activeOrPreset ? Number(((isActivated ? 0.95 : 0.68) * intensityScale).toFixed(2)) : 0;
+    const activeGlowColor = customPresetColor || '#e2e8f0';
     const statusLabel = isActivated ? 'POWERED ON' : 'STANDBY OFF';
     return {
       isInteractive: true,
       interactionKind: 'computer_monitor',
       isActivated,
       screenState: isActivated ? 'white_on' : 'off',
-      screenColorHex: isActivated ? '#f8fafc' : '#1f2e23',
-      screenEmissiveHex: isActivated ? '#e2e8f0' : '#0f172a',
+      screenColorHex: isActivated ? (customPresetColor || '#f8fafc') : '#1f2e23',
+      screenEmissiveHex: isActivated ? activeGlowColor : (customPresetColor || '#0f172a'),
       screenEmissiveIntensity,
       emissiveIntensity: screenEmissiveIntensity,
       emitsLight: lightIntensity > 0,
-      lightColorHex: '#e2e8f0',
+      isLightEmitting: lightIntensity > 0 || Boolean(asset.isLightEmitting),
+      lightColorHex: activeGlowColor,
       lightIntensity,
-      lightDistance: isActivated ? 4.2 : 0,
+      lightDistance: activeOrPreset ? 4.2 : 0,
       statusLabel,
       statusSummary: statusLabel,
       actionPromptLabel: isActivated ? 'Power OFF [E]' : 'Power ON [E]'
@@ -12026,22 +12223,26 @@ export function computeAssetInteractionVisualState(
     sub.includes('exit_sign') ||
     sub.includes('flashlight')
   ) {
-    const screenEmissiveIntensity = isActivated ? 1.25 : 0.05;
-    const lightIntensity = isActivated ? 1.4 : 0;
+    const activeOrPreset = isActivated || hasExplicitLightConfig || Boolean(asset.isLightEmitting);
+    const baseEmissive = isActivated ? 1.25 : activeOrPreset ? 0.85 : 0.05;
+    const screenEmissiveIntensity = Number((baseEmissive * intensityScale).toFixed(2));
+    const lightIntensity = activeOrPreset ? Number(((isActivated ? 1.4 : 1.12) * intensityScale).toFixed(2)) : 0;
+    const activeGlowColor = customPresetColor || '#fde68a';
     const statusLabel = isActivated ? 'ILLUMINATED ON' : 'SWITCHED OFF';
     return {
       isInteractive: true,
       interactionKind: 'lamp_light',
       isActivated,
       screenState: 'none',
-      screenColorHex: isActivated ? '#fef3c7' : '#574c3d',
-      screenEmissiveHex: isActivated ? '#fbbf24' : '#1c1917',
+      screenColorHex: isActivated ? (customPresetColor || '#fef3c7') : '#574c3d',
+      screenEmissiveHex: activeOrPreset ? (customPresetColor || '#fbbf24') : '#1c1917',
       screenEmissiveIntensity,
       emissiveIntensity: screenEmissiveIntensity,
       emitsLight: lightIntensity > 0,
-      lightColorHex: '#fde68a',
+      isLightEmitting: true,
+      lightColorHex: activeGlowColor,
       lightIntensity,
-      lightDistance: isActivated ? 6.5 : 0,
+      lightDistance: activeOrPreset ? 6.5 : 0,
       statusLabel,
       statusSummary: statusLabel,
       actionPromptLabel: isActivated ? '💡 Switch Light OFF [E]' : '💡 Switch Light ON [E]'
@@ -12059,20 +12260,21 @@ export function computeAssetInteractionVisualState(
     sub.includes('intercom') ||
     sub.includes('alarm_clock')
   ) {
-    const screenEmissiveIntensity = isActivated ? 0.85 : 0;
-    const lightIntensity = isActivated ? 0.55 : 0;
+    const screenEmissiveIntensity = isActivated ? Number((0.85 * intensityScale).toFixed(2)) : 0;
+    const lightIntensity = isActivated ? Number((0.55 * intensityScale).toFixed(2)) : 0;
     const statusLabel = isActivated ? 'ACTIVE · TRANSMITTING' : 'IDLE · SILENT';
     return {
       isInteractive: true,
       interactionKind: 'audio_device',
       isActivated,
       screenState: 'none',
-      screenColorHex: isActivated ? '#fef08a' : asset.color || '#5e4c2e',
-      screenEmissiveHex: isActivated ? '#f59e0b' : '#000000',
+      screenColorHex: isActivated ? (customPresetColor || '#fef08a') : asset.color || '#5e4c2e',
+      screenEmissiveHex: isActivated ? (customPresetColor || '#f59e0b') : '#000000',
       screenEmissiveIntensity,
       emissiveIntensity: screenEmissiveIntensity,
       emitsLight: lightIntensity > 0,
-      lightColorHex: '#f59e0b',
+      isLightEmitting: lightIntensity > 0 || Boolean(asset.isLightEmitting),
+      lightColorHex: customPresetColor || '#f59e0b',
       lightIntensity,
       lightDistance: isActivated ? 2.8 : 0,
       statusLabel,
@@ -12091,8 +12293,8 @@ export function computeAssetInteractionVisualState(
     sub.includes('toilet') ||
     sub.includes('faucet')
   ) {
-    const screenEmissiveIntensity = isActivated ? 0.45 : 0;
-    const lightIntensity = isActivated ? 0.4 : 0;
+    const screenEmissiveIntensity = isActivated ? Number((0.45 * intensityScale).toFixed(2)) : 0;
+    const lightIntensity = isActivated ? Number((0.4 * intensityScale).toFixed(2)) : 0;
     const statusLabel = isActivated ? 'WATER RUNNING' : 'VALVE CLOSED';
     return {
       isInteractive: true,
@@ -12104,7 +12306,8 @@ export function computeAssetInteractionVisualState(
       screenEmissiveIntensity,
       emissiveIntensity: screenEmissiveIntensity,
       emitsLight: lightIntensity > 0,
-      lightColorHex: '#bae6fd',
+      isLightEmitting: lightIntensity > 0 || Boolean(asset.isLightEmitting),
+      lightColorHex: customPresetColor || '#bae6fd',
       lightIntensity,
       lightDistance: isActivated ? 2.5 : 0,
       statusLabel,
@@ -12131,43 +12334,48 @@ export function computeAssetInteractionVisualState(
     sub.includes('ac') ||
     sub.includes('vending')
   ) {
-    const screenEmissiveIntensity = isActivated ? 0.9 : 0;
-    const lightIntensity = isActivated ? 0.85 : 0;
+    const activeOrPreset = isActivated || Boolean(asset.isLightEmitting) || hasExplicitLightConfig;
+    const screenEmissiveIntensity = activeOrPreset ? Number(((isActivated ? 0.9 : 0.65) * intensityScale).toFixed(2)) : 0;
+    const lightIntensity = activeOrPreset ? Number(((isActivated ? 0.85 : 0.6) * intensityScale).toFixed(2)) : 0;
     const statusLabel = isActivated ? 'RUNNING · ON' : 'OFF';
     return {
       isInteractive: true,
       interactionKind: 'appliance',
       isActivated,
       screenState: 'none',
-      screenColorHex: isActivated ? '#fde68a' : asset.color || '#7d7559',
-      screenEmissiveHex: isActivated ? '#f97316' : '#000000',
+      screenColorHex: isActivated ? (customPresetColor || '#fde68a') : asset.color || '#7d7559',
+      screenEmissiveHex: activeOrPreset ? (customPresetColor || '#f97316') : '#000000',
       screenEmissiveIntensity,
       emissiveIntensity: screenEmissiveIntensity,
       emitsLight: lightIntensity > 0,
-      lightColorHex: '#fdba74',
+      isLightEmitting: lightIntensity > 0 || Boolean(asset.isLightEmitting),
+      lightColorHex: customPresetColor || '#fdba74',
       lightIntensity,
-      lightDistance: isActivated ? 3.8 : 0,
+      lightDistance: activeOrPreset ? 3.8 : 0,
       statusLabel,
       statusSummary: statusLabel,
       actionPromptLabel: isActivated ? '⚡ Turn Appliance OFF [E]' : '⚡ Turn Appliance ON [E]'
     };
   }
 
-  const screenEmissiveIntensity = isActivated ? 0.35 : 0;
+  const activeOrPreset = isActivated || Boolean(asset.isLightEmitting) || hasExplicitLightConfig;
+  const screenEmissiveIntensity = activeOrPreset ? Number(((isActivated ? 0.35 : 0.6) * intensityScale).toFixed(2)) : 0;
+  const lightIntensity = Boolean(asset.isLightEmitting) || hasExplicitLightConfig ? Number((0.8 * intensityScale).toFixed(2)) : 0;
   const statusLabel = isActivated ? 'INSPECTED · ACTIVE' : 'STANDBY';
   return {
     isInteractive: true,
     interactionKind: 'general_prop',
     isActivated,
     screenState: 'none',
-    screenColorHex: isActivated ? '#fef3c7' : asset.color || '#8a8170',
-    screenEmissiveHex: isActivated ? '#d97706' : '#000000',
+    screenColorHex: isActivated ? (customPresetColor || '#fef3c7') : asset.color || '#8a8170',
+    screenEmissiveHex: activeOrPreset ? (customPresetColor || '#d97706') : '#000000',
     screenEmissiveIntensity,
     emissiveIntensity: screenEmissiveIntensity,
-    emitsLight: false,
-    lightColorHex: '#fde68a',
-    lightIntensity: 0,
-    lightDistance: 0,
+    emitsLight: lightIntensity > 0,
+    isLightEmitting: lightIntensity > 0 || Boolean(asset.isLightEmitting),
+    lightColorHex: customPresetColor || '#fde68a',
+    lightIntensity,
+    lightDistance: lightIntensity > 0 ? 4.5 : 0,
     statusLabel,
     statusSummary: statusLabel,
     actionPromptLabel: isActivated ? 'Reset State [E]' : 'Interact [E]'
@@ -12905,4 +13113,397 @@ export function resetRoomToDefaultArchitecture(params: {
     message: `🔄 Reset Room (${effectiveLabel}): Cleared ${clearedCount} placed asset(s) and restored ${defaultFloorArch.length} default architectural element(s)!`
   };
 }
+
+/**
+ * ============================================================================
+ * ADVANCED LIGHTING IMPROVEMENTS:
+ * 1. WebGL PointLight Pool & Distance Culling (MAX_ACTIVE_DYNAMIC_POINT_LIGHTS)
+ * 2. Smooth 250ms Color-Temperature & Intensity Crossfades
+ * 3. AI Lighting Mood Auto-Director (gemini-3.1-flash-lite + deterministic fallback)
+ * ============================================================================
+ */
+export const MAX_ACTIVE_DYNAMIC_POINT_LIGHTS = 10;
+export const LIGHTING_CROSSFADE_DURATION_MS = 250;
+
+export interface PointLightCullCandidate {
+  id: string;
+  position: readonly [number, number, number];
+  priority?: number; // higher priority gives a virtual distance discount (e.g. selected or interactive asset)
+}
+
+/**
+ * Ranks dynamic PointLight candidates by 3D distance to the active camera position and
+ * selects up to `maxActiveLights` closest lights to emit real-time WebGL PointLight illumination,
+ * preventing shader light uniform overflow or frame drops while emissive bulb/screen meshes remain visible.
+ */
+export function selectCulledPointLightIds(
+  candidates: readonly PointLightCullCandidate[],
+  cameraPosition: readonly [number, number, number],
+  maxActiveLights: number = MAX_ACTIVE_DYNAMIC_POINT_LIGHTS
+): {
+  activeIds: Set<string>;
+  culledIds: Set<string>;
+  activeCount: number;
+  totalCount: number;
+} {
+  const safeCandidates = Array.isArray(candidates) ? candidates : [];
+  const cap = Math.max(1, Math.floor(maxActiveLights));
+  const cx = Number(cameraPosition?.[0]) || 0;
+  const cy = Number(cameraPosition?.[1]) || 0;
+  const cz = Number(cameraPosition?.[2]) || 0;
+
+  const scored = safeCandidates.map((cand) => {
+    const px = Number(cand.position?.[0]) || 0;
+    const py = Number(cand.position?.[1]) || 0;
+    const pz = Number(cand.position?.[2]) || 0;
+    const dx = px - cx;
+    const dy = py - cy;
+    const dz = pz - cz;
+    const distSq = dx * dx + dy * dy + dz * dz;
+    const priorityBonus = (Number(cand.priority) || 0) * 12.0;
+    return {
+      id: cand.id,
+      effectiveScore: distSq - priorityBonus
+    };
+  });
+
+  scored.sort((a, b) => a.effectiveScore - b.effectiveScore || a.id.localeCompare(b.id));
+
+  const activeIds = new Set<string>();
+  const culledIds = new Set<string>();
+
+  for (let i = 0; i < scored.length; i++) {
+    if (i < cap) {
+      activeIds.add(scored[i].id);
+    } else {
+      culledIds.add(scored[i].id);
+    }
+  }
+
+  return {
+    activeIds,
+    culledIds,
+    activeCount: activeIds.size,
+    totalCount: safeCandidates.length
+  };
+}
+
+function parseHexToRgbTuple(hex: string): [number, number, number] {
+  const cleaned = (hex || '#fde68a').replace(/[^0-9a-fA-F]/g, '');
+  if (cleaned.length === 3) {
+    const r = parseInt(cleaned[0] + cleaned[0], 16);
+    const g = parseInt(cleaned[1] + cleaned[1], 16);
+    const b = parseInt(cleaned[2] + cleaned[2], 16);
+    return [r, g, b];
+  }
+  if (cleaned.length >= 6) {
+    const r = parseInt(cleaned.slice(0, 2), 16);
+    const g = parseInt(cleaned.slice(2, 4), 16);
+    const b = parseInt(cleaned.slice(4, 6), 16);
+    return [r, g, b];
+  }
+  return [253, 230, 138];
+}
+
+/**
+ * Smoothly interpolates between two hex colors (`#rrggbb`) using a cubic ease-out curve.
+ */
+export function interpolateHexColor(fromHex: string, toHex: string, t: number): string {
+  const clamped = Math.max(0, Math.min(1, Number(t) || 0));
+  if (clamped <= 0) return fromHex || '#fde68a';
+  if (clamped >= 1) return toHex || '#fde68a';
+  const eased = 1 - Math.pow(1 - clamped, 3);
+  const [r1, g1, b1] = parseHexToRgbTuple(fromHex);
+  const [r2, g2, b2] = parseHexToRgbTuple(toHex);
+  const r = Math.round(r1 + (r2 - r1) * eased);
+  const g = Math.round(g1 + (g2 - g1) * eased);
+  const b = Math.round(b1 + (b2 - b1) * eased);
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
+/**
+ * Computes the 250ms crossfade state between a previous light color/intensity and a new target color/intensity.
+ */
+export function computeLightingCrossfadeState(
+  prev: { colorHex: string; intensity: number },
+  target: { colorHex: string; intensity: number },
+  elapsedMs: number,
+  durationMs: number = LIGHTING_CROSSFADE_DURATION_MS
+): {
+  colorHex: string;
+  intensity: number;
+  alpha: number;
+  isTransitioning: boolean;
+} {
+  const safeDuration = Math.max(1, Number(durationMs) || LIGHTING_CROSSFADE_DURATION_MS);
+  const rawAlpha = Math.max(0, Math.min(1, (Number(elapsedMs) || 0) / safeDuration));
+  const easedAlpha = 1 - Math.pow(1 - rawAlpha, 3);
+  const fromInt = Number(prev?.intensity ?? target.intensity ?? 1.0);
+  const toInt = Number(target?.intensity ?? 1.0);
+  const intensity = Number((fromInt + (toInt - fromInt) * easedAlpha).toFixed(4));
+  const colorHex = interpolateHexColor(
+    prev?.colorHex || target.colorHex || '#fde68a',
+    target?.colorHex || '#fde68a',
+    rawAlpha
+  );
+  return {
+    colorHex,
+    intensity,
+    alpha: Number(rawAlpha.toFixed(4)),
+    isTransitioning: rawAlpha < 1
+  };
+}
+
+export interface LightingMoodFixtureAssignment {
+  assetId: string;
+  lightingPreset: string;
+  colorHex: string;
+  emissionIntensity: number;
+  customAnimationFps: number | null; // null = Global FPS
+}
+
+export interface LightingMoodDirective {
+  moodTitle: string;
+  moodPrompt: string;
+  floor: FloorId;
+  summary: string;
+  defaultPresetId: string;
+  defaultColorHex: string;
+  defaultIntensity: number;
+  defaultFps: number | null;
+  assignments: LightingMoodFixtureAssignment[];
+}
+
+export const LIGHTING_MOOD_QUICK_PROMPTS: ReadonlyArray<{
+  id: string;
+  label: string;
+  prompt: string;
+}> = [
+  {
+    id: 'noir_interrogation',
+    label: '🕵️ 1978 Noir Interrogation',
+    prompt: '1978 Noir Detective Interrogation with warm dim tungsten desk pools and slow 12 FPS shadows'
+  },
+  {
+    id: 'power_brownout',
+    label: '⚡ Power Grid Brownout',
+    prompt: 'Power Grid Brownout with stuttering 6 FPS amber bulbs and low-voltage corridor flicker'
+  },
+  {
+    id: 'crimson_nightmare',
+    label: '🩸 Crimson Nightmare',
+    prompt: 'Eerie Crimson Nightmare occult darkroom glow with 6 FPS unsettling horror flicker'
+  },
+  {
+    id: 'neon_arcade_90s',
+    label: '🕹️ 90s Neon Lounge',
+    prompt: '1993 Late-Night Neon Synthwave Lounge with magenta-cyan CRT glow at 24 FPS'
+  },
+  {
+    id: 'bright_inspection',
+    label: '☀️ Bright Inspection',
+    prompt: 'Bright Clinical Forensic Inspection with crisp 60 FPS high-output overhead office lighting'
+  }
+];
+
+/**
+ * Deterministic scene lighting mood director that coordinates presets, colors, emission intensities,
+ * and flicker FPS across all light-emitting or interactive screen assets on `floor` based on a natural-language mood.
+ */
+export function buildLightingMoodDirectiveFromPrompt(
+  moodPrompt: string,
+  floor: FloorId,
+  assets: readonly PlacedAsset[]
+): LightingMoodDirective {
+  const cleanPrompt = (moodPrompt || '').trim() || '1978 Noir Detective Interrogation';
+  const lower = cleanPrompt.toLowerCase();
+
+  let moodTitle = '1978 Noir Detective Interrogation';
+  let defaultPresetId = 'warm_vintage';
+  let defaultColorHex = '#f59e0b';
+  let defaultIntensity = 0.85;
+  let defaultFps: number | null = 12;
+  let summary =
+    'Coordinated warm 1978 tungsten pools and subdued 12 FPS ballast hum across floor fixtures.';
+
+  if (lower.includes('brownout') || lower.includes('stutter') || lower.includes('outage') || lower.includes('dying')) {
+    moodTitle = 'Power Grid Brownout';
+    defaultPresetId = 'atmospheric_dim';
+    defaultColorHex = '#fde68a';
+    defaultIntensity = 0.45;
+    defaultFps = 6;
+    summary = 'Low-voltage brownout with 0.45x dimmed filaments and erratic 6 FPS ballast stutter.';
+  } else if (lower.includes('crimson') || lower.includes('blood') || lower.includes('nightmare') || lower.includes('horror') || lower.includes('occult')) {
+    moodTitle = 'Crimson Occult Nightmare';
+    defaultPresetId = 'horror_crimson';
+    defaultColorHex = '#ef4444';
+    defaultIntensity = 1.45;
+    defaultFps = 6;
+    summary = 'High-contrast crimson darkroom wash with 6 FPS psychological horror flicker.';
+  } else if (lower.includes('neon') || lower.includes('90s') || lower.includes('cyber') || lower.includes('arcade') || lower.includes('synth')) {
+    moodTitle = '1993 Neon Lounge';
+    defaultPresetId = 'neon_cyber';
+    defaultColorHex = '#ec4899';
+    defaultIntensity = 1.85;
+    defaultFps = 24;
+    summary = 'Saturated 1990s neon magenta & cyan CRT phosphor accents running at 24 FPS.';
+  } else if (lower.includes('bright') || lower.includes('office') || lower.includes('inspection') || lower.includes('clinical') || lower.includes('daylight')) {
+    moodTitle = 'Bright Forensic Inspection';
+    defaultPresetId = 'bright_office';
+    defaultColorHex = '#ffffff';
+    defaultIntensity = 2.1;
+    defaultFps = 60;
+    summary = 'Crisp 2.1x daylight-balanced inspection illumination locked at smooth 60 FPS.';
+  } else if (lower.includes('flashlight') || lower.includes('beam') || lower.includes('search')) {
+    moodTitle = 'Eerie Flashlight Search';
+    defaultPresetId = 'eerie_flashlight';
+    defaultColorHex = '#e0f2fe';
+    defaultIntensity = 2.4;
+    defaultFps = 12;
+    summary = 'Cold high-beam halogen searchlight pools with 12 FPS atmospheric shimmer.';
+  }
+
+  const floorAssets = (Array.isArray(assets) ? assets : []).filter((a) => {
+    if (!a || a.floor !== floor) return false;
+    const text = `${a.name} ${a.subType} ${a.category}`.toLowerCase();
+    return (
+      Boolean(a.isLightEmitting) ||
+      a.category === 'lighting' ||
+      isTvOrCrtScreenAsset(a) ||
+      /lamp|sconce|chandelier|light|exit_sign|crt|tv|terminal|computer|neon|fluorescent/i.test(text)
+    );
+  });
+
+  const assignments: LightingMoodFixtureAssignment[] = floorAssets.map((asset, idx) => {
+    const isScreen = isTvOrCrtScreenAsset(asset);
+    const isCorridorFluorescent = /fluorescent|ceiling|corridor|exit_sign/i.test(
+      `${asset.name} ${asset.subType}`
+    );
+
+    let preset = defaultPresetId;
+    let colorHex = defaultColorHex;
+    let intensity = defaultIntensity;
+    let fps: number | null = defaultFps;
+
+    if (isScreen && defaultPresetId === 'warm_vintage') {
+      preset = 'eerie_flashlight';
+      colorHex = '#bae6fd';
+      intensity = Number((defaultIntensity * 1.15).toFixed(2));
+    } else if (isScreen && defaultPresetId === 'neon_cyber') {
+      colorHex = idx % 2 === 0 ? '#38bdf8' : '#ec4899';
+    } else if (isCorridorFluorescent && defaultPresetId === 'atmospheric_dim') {
+      fps = 6;
+      intensity = 0.4;
+    }
+
+    return {
+      assetId: asset.id,
+      lightingPreset: preset,
+      colorHex,
+      emissionIntensity: Math.max(0.1, Math.min(3.0, Number(intensity.toFixed(2)))),
+      customAnimationFps: fps
+    };
+  });
+
+  return {
+    moodTitle,
+    moodPrompt: cleanPrompt,
+    floor,
+    summary,
+    defaultPresetId,
+    defaultColorHex,
+    defaultIntensity,
+    defaultFps,
+    assignments
+  };
+}
+
+/**
+ * Applies a `LightingMoodDirective` across all matching light-emitting/screen assets on `floor`,
+ * recording `prevLightColorHex`, `prevEmissionIntensity`, and `lightingTransitionStartMs` so the 3D viewport
+ * smoothly crossfades every fixture over 250ms.
+ */
+export function applyLightingMoodDirectiveToAssets(
+  assets: readonly PlacedAsset[],
+  floor: FloorId,
+  directive: LightingMoodDirective,
+  nowMs: number = Date.now()
+): {
+  updatedAssets: PlacedAsset[];
+  updatedCount: number;
+  message: string;
+} {
+  const safeAssets = Array.isArray(assets) ? assets : [];
+  const byId = new Map<string, LightingMoodFixtureAssignment>();
+  for (const item of directive.assignments || []) {
+    if (item && item.assetId) {
+      byId.set(item.assetId, item);
+    }
+  }
+
+  let updatedCount = 0;
+  const updatedAssets = safeAssets.map((asset) => {
+    if (!asset || asset.floor !== floor) return asset;
+    const text = `${asset.name} ${asset.subType} ${asset.category}`.toLowerCase();
+    const isEligible =
+      byId.has(asset.id) ||
+      Boolean(asset.isLightEmitting) ||
+      asset.category === 'lighting' ||
+      isTvOrCrtScreenAsset(asset) ||
+      /lamp|sconce|chandelier|light|exit_sign|crt|tv|terminal|computer|neon|fluorescent/i.test(text);
+
+    if (!isEligible) return asset;
+
+    const assigned = byId.get(asset.id);
+    const targetPreset = assigned?.lightingPreset || directive.defaultPresetId || 'warm_vintage';
+    const targetColor = assigned?.colorHex || directive.defaultColorHex || '#f59e0b';
+    const targetIntensity = Math.max(
+      0.1,
+      Math.min(3.0, Number(assigned?.emissionIntensity ?? directive.defaultIntensity ?? 1.0))
+    );
+    const targetFps =
+      assigned !== undefined ? assigned.customAnimationFps : directive.defaultFps;
+
+    updatedCount++;
+
+    const updatedCompositeParts = Array.isArray(asset.compositeParts)
+      ? asset.compositeParts.map((part) => {
+          const partIdLower = (part.id || '').toLowerCase();
+          const isGlowingPart =
+            Boolean(part.emissive && part.emissive !== '#000000') ||
+            /bulb|shade|screen|crt|tube|glass|lamp|glow|neon/i.test(partIdLower);
+          if (isGlowingPart) {
+            return {
+              ...part,
+              emissive: targetColor
+            };
+          }
+          return part;
+        })
+      : asset.compositeParts;
+
+    return {
+      ...asset,
+      prevLightColorHex: asset.color || '#fde68a',
+      prevEmissionIntensity: Number(asset.emissionIntensity ?? asset.lightIntensity ?? 1.0),
+      lightingTransitionStartMs: nowMs,
+      isActivated: true,
+      isLightEmitting: true,
+      lightingPreset: targetPreset,
+      color: targetColor,
+      emissionIntensity: targetIntensity,
+      lightIntensity: targetIntensity,
+      customAnimationFps: targetFps && targetFps > 0 ? targetFps : undefined,
+      customFlickerFps: targetFps && targetFps > 0 ? targetFps : undefined,
+      compositeParts: updatedCompositeParts
+    };
+  });
+
+  return {
+    updatedAssets,
+    updatedCount,
+    message: `🎬 AI Lighting Director applied "${directive.moodTitle}" across ${updatedCount} fixture(s) on ${floor.toUpperCase()} (250ms smooth crossfade).`
+  };
+}
+
 

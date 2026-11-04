@@ -57,7 +57,10 @@ import {
   buildGeminiTtsRequestPayload,
   inferVoiceProfileFromArchetypeAndName,
   FacialExpressionType,
-  CharacterVoiceProfile
+  CharacterVoiceProfile,
+  buildLightingMoodDirectiveFromPrompt,
+  LightingMoodDirective,
+  FloorId
 } from './src/game/rules';
 import { INITIAL_AGENTS, createBlueprintFromAsset, AssetBlueprint } from './src/game/hotelData';
 
@@ -1201,6 +1204,122 @@ Include mood, bpm (40-140), key/scale, 4 jazz/ambient chord progression symbols 
         track: fallback,
         modelUsed: modelName,
         source: 'procedural-fallback'
+      });
+    }
+  });
+
+  // 7B. AI Lighting Mood Auto-Director (Cheapest capable Google model: gemini-3.1-flash-lite)
+  app.post('/api/lighting/auto-direct', async (req, res) => {
+    const {
+      moodPrompt = '1978 Noir Detective Interrogation',
+      floor = 'lobby',
+      assets = []
+    }: {
+      moodPrompt?: string;
+      floor?: FloorId;
+      assets?: PlacedAsset[];
+    } = req.body || {};
+
+    const modelName = 'gemini-3.1-flash-lite';
+    const baseDirective = buildLightingMoodDirectiveFromPrompt(moodPrompt, floor, assets);
+
+    try {
+      if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'MISSING_KEY') {
+        throw new Error('Using deterministic lighting mood director');
+      }
+      const ai = getGenAIClient();
+      const fixtureListText = baseDirective.assignments
+        .slice(0, 20)
+        .map((a) => {
+          const match = (assets || []).find((item) => item.id === a.assetId);
+          return `- id="${a.assetId}" (${match?.name || 'Fixture'}, subType=${match?.subType || 'lamp'})`;
+        })
+        .join('\n');
+
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: `You are the AI Lighting Mood Auto-Director for "The Alderney Arms", a 1978/1990s mystery hotel 3D architectural simulator.
+Coordinate lighting presets, hex colors (#rrggbb), emission intensities (0.2 to 2.8), and flicker frequencies (0 for Global, or 6, 12, 24, 60 FPS) for floor "${floor}" based on this mood request: "${moodPrompt}".
+Allowed lightingPreset values: 'atmospheric_dim', 'bright_office', 'eerie_flashlight', 'amber_terminal', 'neon_grime', 'candlelight', 'warm_vintage', 'horror_crimson', 'neon_cyber'.
+Fixtures on floor:
+${fixtureListText || '(Use default floor mood values)'}`,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              moodTitle: { type: Type.STRING },
+              summary: { type: Type.STRING },
+              defaultPresetId: { type: Type.STRING },
+              defaultColorHex: { type: Type.STRING },
+              defaultIntensity: { type: Type.NUMBER },
+              defaultFps: { type: Type.NUMBER },
+              assignments: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    assetId: { type: Type.STRING },
+                    lightingPreset: { type: Type.STRING },
+                    colorHex: { type: Type.STRING },
+                    emissionIntensity: { type: Type.NUMBER },
+                    customAnimationFps: { type: Type.NUMBER }
+                  },
+                  required: ['assetId', 'lightingPreset', 'colorHex', 'emissionIntensity', 'customAnimationFps']
+                }
+              }
+            },
+            required: ['moodTitle', 'summary', 'defaultPresetId', 'defaultColorHex', 'defaultIntensity', 'defaultFps']
+          }
+        }
+      });
+
+      const parsed = JSON.parse((response.text || '{}').trim());
+      if (parsed && parsed.moodTitle && parsed.defaultColorHex) {
+        const mergedDirective: LightingMoodDirective = {
+          moodTitle: parsed.moodTitle || baseDirective.moodTitle,
+          moodPrompt,
+          floor,
+          summary: parsed.summary || baseDirective.summary,
+          defaultPresetId: parsed.defaultPresetId || baseDirective.defaultPresetId,
+          defaultColorHex: /^#[0-9a-fA-F]{6}$/.test(parsed.defaultColorHex)
+            ? parsed.defaultColorHex
+            : baseDirective.defaultColorHex,
+          defaultIntensity: Math.max(0.1, Math.min(3.0, Number(parsed.defaultIntensity) || baseDirective.defaultIntensity)),
+          defaultFps: parsed.defaultFps && parsed.defaultFps > 0 ? Number(parsed.defaultFps) : baseDirective.defaultFps,
+          assignments:
+            Array.isArray(parsed.assignments) && parsed.assignments.length > 0
+              ? parsed.assignments.map((item: {
+                  assetId: string;
+                  lightingPreset: string;
+                  colorHex: string;
+                  emissionIntensity: number;
+                  customAnimationFps: number;
+                }) => ({
+                  assetId: item.assetId,
+                  lightingPreset: item.lightingPreset || baseDirective.defaultPresetId,
+                  colorHex: /^#[0-9a-fA-F]{6}$/.test(item.colorHex)
+                    ? item.colorHex
+                    : baseDirective.defaultColorHex,
+                  emissionIntensity: Math.max(0.1, Math.min(3.0, Number(item.emissionIntensity) || baseDirective.defaultIntensity)),
+                  customAnimationFps: item.customAnimationFps > 0 ? Number(item.customAnimationFps) : null
+                }))
+              : baseDirective.assignments
+        };
+
+        res.json({
+          directive: mergedDirective,
+          modelUsed: modelName,
+          source: 'gemini-3.1-flash-lite'
+        });
+        return;
+      }
+      throw new Error('Fallback to deterministic lighting mood director');
+    } catch {
+      res.json({
+        directive: baseDirective,
+        modelUsed: modelName,
+        source: 'deterministic-fallback'
       });
     }
   });

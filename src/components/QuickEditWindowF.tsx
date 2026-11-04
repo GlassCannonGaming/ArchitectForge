@@ -21,7 +21,8 @@ import {
   swapAssetVisualDesign,
   TexturePresetId,
   isTvOrCrtScreenAsset,
-  LIGHTING_PRESETS
+  LIGHTING_PRESETS,
+  LIGHTING_MOOD_QUICK_PROMPTS
 } from '../game/rules';
 import { AssetBlueprint } from '../game/hotelData';
 
@@ -38,6 +39,11 @@ interface QuickEditWindowFProps {
     rotationDeltaY?: number;
     hingeSwingMode?: HingeSwingMode;
     isSecretPassage?: boolean;
+    emissionIntensity?: number;
+    lightIntensity?: number;
+    isLightEmitting?: boolean;
+    lightingPreset?: string;
+    customAnimationFps?: number | null;
   }) => void;
   onInteractKeyE: (asset: PlacedAsset) => void;
   onDuplicate: (asset: PlacedAsset) => void;
@@ -56,6 +62,7 @@ interface QuickEditWindowFProps {
   onUpdateAgent?: (updated: HotelAgentProfile, message?: string) => void;
   onOpenCharacterCreator?: (agent: HotelAgentProfile) => void;
   onClearAgentSelection?: () => void;
+  onAutoDirectLighting?: (moodPrompt: string) => void;
 }
 
 const SWATCH_COLORS = [
@@ -102,11 +109,13 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
   selectedAgent = null,
   onUpdateAgent,
   onOpenCharacterCreator,
-  onClearAgentSelection
+  onClearAgentSelection,
+  onAutoDirectLighting
 }) => {
   const [customPos, setCustomPos] = useState<{ x: number; y: number } | null>(null);
   const [minimized, setMinimized] = useState<boolean>(false);
   const [setNameDraft, setSetNameDraft] = useState<string>('');
+  const [moodPromptDraft, setMoodPromptDraft] = useState<string>('1978 Noir Detective Interrogation');
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
 
   // Reset custom drag offset if primary asset or selected agent changes
@@ -601,11 +610,13 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
     false,
     'QuickEdit.isUnkemptOrAgedAsset'
   );
+  const effectiveAssetFps =
+    primaryAsset.customAnimationFps || primaryAsset.customFlickerFps || globalAnimationFps;
   const flickerSpec = safeExecuteCatalogOrVariantCallback(
-    () => computeUnkemptFlickerCssSpec(globalAnimationFps, primaryAsset.id),
+    () => computeUnkemptFlickerCssSpec(effectiveAssetFps, primaryAsset.id),
     {
       isFlickering: true,
-      fps: globalAnimationFps,
+      fps: effectiveAssetFps,
       steps: 6,
       stepCount: 6,
       durationSec: 0.5,
@@ -623,6 +634,7 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
       isInteractive: true,
       interactionKind: 'general_prop',
       isActivated: Boolean(primaryAsset.isActivated),
+      isLightEmitting: Boolean(primaryAsset.isLightEmitting),
       screenState: 'none',
       screenColorHex: primaryAsset.color || '#8a8170',
       screenEmissiveHex: '#000000',
@@ -764,7 +776,7 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
             </div>
             <div className="text-[10px] font-medium text-[#38bdf8] truncate">
               {unkemptOrAged
-                ? `🕯️ Atmospheric Flicker (${globalAnimationFps} FPS) · Drag to Move`
+                ? `🕯️ Atmospheric Flicker (${effectiveAssetFps} FPS) · Drag to Move`
                 : 'Quick Edit Window · Drag to Move'}
             </div>
           </div>
@@ -1060,6 +1072,56 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
                   </option>
                 ))}
               </select>
+
+              {/* AI Lighting Mood Auto-Director (gemini-3.1-flash-lite + 250ms Floor Crossfade) */}
+              {onAutoDirectLighting && (
+                <div
+                  data-testid="quick-edit-ai-lighting-director"
+                  className="pt-1.5 mt-1 border-t border-amber-200/80 space-y-1"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-extrabold uppercase tracking-wider text-amber-900">
+                      🎬 AI Room Mood Auto-Director
+                    </span>
+                    <span className="text-[8px] font-mono text-amber-700">250ms Crossfade · Flash-Lite</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {LIGHTING_MOOD_QUICK_PROMPTS.map((chip) => (
+                      <button
+                        key={chip.id}
+                        type="button"
+                        data-testid={`lighting-mood-chip-${chip.id}`}
+                        onClick={() => {
+                          setMoodPromptDraft(chip.prompt);
+                          onAutoDirectLighting(chip.prompt);
+                        }}
+                        className="px-1.5 py-0.5 rounded-md bg-white hover:bg-amber-100 border border-amber-300 text-[9px] font-bold text-amber-950 transition-colors"
+                      >
+                        {chip.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1 pt-0.5">
+                    <input
+                      type="text"
+                      aria-label="AI Lighting Mood Prompt"
+                      data-testid="ai-lighting-mood-input"
+                      value={moodPromptDraft}
+                      onChange={(e) => setMoodPromptDraft(e.target.value)}
+                      placeholder="e.g. 1978 Noir Interrogation..."
+                      className="flex-1 min-w-0 bg-white border border-amber-300 rounded-lg px-2 py-0.5 text-[10px] text-slate-800"
+                    />
+                    <button
+                      type="button"
+                      data-testid="ai-lighting-mood-apply-btn"
+                      onClick={() => onAutoDirectLighting(moodPromptDraft)}
+                      className="px-2 py-0.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-[9px] font-extrabold shrink-0"
+                    >
+                      Direct
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1098,7 +1160,7 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
                       type="button"
                       onClick={() =>
                         safeBatchModify({
-                          customAnimationFps: opt.val === 0 ? undefined : opt.val
+                          customAnimationFps: opt.val === 0 ? null : opt.val
                         })
                       }
                       className={`py-1 rounded text-[9px] font-bold transition-all ${

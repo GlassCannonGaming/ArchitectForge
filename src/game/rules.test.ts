@@ -4464,3 +4464,239 @@ test('Catalog Renovation themes (78s Pristine, 70s Unkempt, 90s Updated) switch 
   assert.equal(defaultWins.blueprints.isOpen, false);
 });
 
+test('Lighting systems and effects fixes: customAnimationFps reset, mood light overrides, interaction visual state scaling, blueprint/clipboard preservation, and lights_flicker trigger', async () => {
+  const {
+    batchModifySelectedAssets,
+    extractMoodLightEmittersFromAssets,
+    computePerRoomMoodLightState,
+    computeAssetInteractionVisualState,
+    createRoomBlueprintFromAssets,
+    instantiateRoomBlueprintOnFloor,
+    copySelectedAssetsToClipboard,
+    pasteAssetsFromClipboard,
+    evaluateInvisibleTriggersAtPosition
+  } = await import('./rules');
+
+  // 1. batchModifySelectedAssets sets and resets customAnimationFps (Global = null/0 -> undefined) and syncs compositeParts emissive on preset
+  const lampAsset: PlacedAsset = {
+    id: 'lamp_test_1',
+    name: '1978 Brass Table Lamp',
+    category: 'lighting',
+    subType: 'lamp_table',
+    floor: 'floor1',
+    position: [2, 0.5, 2],
+    dimensions: [0.45, 0.75, 0.45],
+    rotationY: 0,
+    color: '#d4944e',
+    textureId: 'aged_brass',
+    collidable: true,
+    isActivated: true,
+    compositeParts: [
+      {
+        id: 'lamp_shade',
+        shape: 'cone',
+        offset: [0, 0.5, 0],
+        size: [0.22, 0.25, 0.22],
+        color: '#fef3c7',
+        emissive: '#fde68a',
+        roughness: 0.4,
+        metalness: 0.1
+      }
+    ]
+  };
+
+  const withCustomFps = batchModifySelectedAssets([lampAsset], ['lamp_test_1'], {
+    customAnimationFps: 6,
+    lightingPreset: 'neon_cyber',
+    emissionIntensity: 1.8,
+    lightIntensity: 1.8,
+    color: '#ec4899',
+    isLightEmitting: true
+  });
+  assert.equal(withCustomFps[0].customAnimationFps, 6);
+  assert.equal(withCustomFps[0].customFlickerFps, 6);
+  assert.equal(withCustomFps[0].lightingPreset, 'neon_cyber');
+  assert.equal(withCustomFps[0].compositeParts?.[0].emissive, '#ec4899');
+
+  // Resetting back to Global (null) clears customAnimationFps and customFlickerFps
+  const resetToGlobal = batchModifySelectedAssets(withCustomFps, ['lamp_test_1'], {
+    customAnimationFps: null
+  });
+  assert.equal(resetToGlobal[0].customAnimationFps, undefined);
+  assert.equal(resetToGlobal[0].customFlickerFps, undefined);
+
+  // 2. extractMoodLightEmittersFromAssets and computePerRoomMoodLightState honor intensityMultiplier, baseColorHex, and effectiveFps
+  const emitters = extractMoodLightEmittersFromAssets('floor1', withCustomFps);
+  const customLampEmitter = emitters.find((e) => e.id.includes('lamp_test_1'));
+  assert.ok(customLampEmitter);
+  assert.equal(customLampEmitter.intensityMultiplier, 1.8);
+  assert.equal(customLampEmitter.baseColorHex, '#ec4899');
+  assert.equal(customLampEmitter.customAnimationFps, 6);
+
+  const moodFrameDefault = computePerRoomMoodLightState(1.23, customLampEmitter.id, customLampEmitter.kind);
+  const moodFrameCustom = computePerRoomMoodLightState(1.23, customLampEmitter.id, customLampEmitter.kind, {
+    intensityMultiplier: customLampEmitter.intensityMultiplier,
+    baseColorHex: customLampEmitter.baseColorHex,
+    effectiveFps: 6
+  });
+  assert.equal(moodFrameCustom.colorHex, '#ec4899');
+  assert.ok(moodFrameCustom.intensity > moodFrameDefault.intensity);
+
+  // 3. computeAssetInteractionVisualState scales lightIntensity and screenEmissiveIntensity by emissionIntensity and sets isLightEmitting
+  const visualState = computeAssetInteractionVisualState(withCustomFps[0]);
+  assert.equal(visualState.isLightEmitting, true);
+  assert.equal(visualState.emitsLight, true);
+  assert.equal(visualState.lightColorHex, '#ec4899');
+  assert.ok(visualState.lightIntensity > 1.0);
+
+  // 4. Room Blueprints and Clipboard preserve lighting properties
+  const bp = createRoomBlueprintFromAssets('Neon Lounge Set', 'Custom lighting test', withCustomFps);
+  assert.ok(bp);
+  assert.equal(bp.items[0].lightingPreset, 'neon_cyber');
+  assert.equal(bp.items[0].emissionIntensity, 1.8);
+  assert.equal(bp.items[0].customAnimationFps, 6);
+
+  const instantiated = instantiateRoomBlueprintOnFloor(bp, 'floor2', [0, 0]);
+  assert.equal(instantiated[0].lightingPreset, 'neon_cyber');
+  assert.equal(instantiated[0].emissionIntensity, 1.8);
+  assert.equal(instantiated[0].customAnimationFps, 6);
+
+  const clip = copySelectedAssetsToClipboard(withCustomFps, ['lamp_test_1']);
+  const pasted = pasteAssetsFromClipboard(clip, 'floor1', [1, 1]);
+  assert.equal(pasted.pastedAssets[0].lightingPreset, 'neon_cyber');
+  assert.equal(pasted.pastedAssets[0].emissionIntensity, 1.8);
+  assert.equal(pasted.pastedAssets[0].customAnimationFps, 6);
+
+  // 5. evaluateInvisibleTriggersAtPosition with 'lights_flicker' sets 6 FPS flicker on floor lighting assets
+  const flickerTrigger: PlacedAsset = {
+    id: 'trig_flicker_1',
+    name: 'Corridor Flicker Trigger',
+    category: 'trigger',
+    subType: 'invisible_event_trigger',
+    floor: 'floor1',
+    position: [0, 1, 0],
+    dimensions: [2, 2, 2],
+    rotationY: 0,
+    color: '#06b6d4',
+    textureId: 'matte_plaster',
+    collidable: false,
+    isInvisibleTrigger: true,
+    triggerEventType: 'lights_flicker',
+    triggerFired: false
+  };
+  const evalRes = evaluateInvisibleTriggersAtPosition([0, 1, 0], 'floor1', [resetToGlobal[0], flickerTrigger]);
+  assert.equal(evalRes.firedTriggers.length, 1);
+  const flickeredLamp = evalRes.updatedAssets.find((a) => a.id === 'lamp_test_1')!;
+  assert.equal(flickeredLamp.customAnimationFps, 6);
+  assert.equal(flickeredLamp.isLightEmitting, true);
+});
+
+test('Advanced Lighting Improvements: WebGL PointLight distance culling, 250ms color/intensity crossfade, and AI Lighting Mood Auto-Director', async () => {
+  const {
+    selectCulledPointLightIds,
+    MAX_ACTIVE_DYNAMIC_POINT_LIGHTS,
+    interpolateHexColor,
+    computeLightingCrossfadeState,
+    LIGHTING_CROSSFADE_DURATION_MS,
+    buildLightingMoodDirectiveFromPrompt,
+    applyLightingMoodDirectiveToAssets,
+    LIGHTING_MOOD_QUICK_PROMPTS
+  } = await import('./rules');
+
+  // 1. WebGL PointLight Pool & Distance Culling caps active lights to MAX_ACTIVE_DYNAMIC_POINT_LIGHTS
+  const candidates = Array.from({ length: 16 }, (_, idx) => ({
+    id: `light_${idx}`,
+    position: [idx * 2, 1.5, 0] as [number, number, number],
+    priority: idx === 14 ? 100 : 0 // high priority on light_14 boosts it into active pool
+  }));
+  const cullRes = selectCulledPointLightIds(candidates, [0, 1.5, 0], MAX_ACTIVE_DYNAMIC_POINT_LIGHTS);
+  assert.equal(cullRes.activeCount, MAX_ACTIVE_DYNAMIC_POINT_LIGHTS);
+  assert.equal(cullRes.totalCount, 16);
+  assert.equal(cullRes.activeIds.has('light_0'), true);
+  assert.equal(cullRes.activeIds.has('light_14'), true); // boosted by priority
+  assert.equal(cullRes.culledIds.has('light_15'), true);
+
+  // 2. Smooth 250ms Color-Temperature & Intensity Crossfades
+  assert.equal(interpolateHexColor('#000000', '#ffffff', 0), '#000000');
+  assert.equal(interpolateHexColor('#000000', '#ffffff', 1), '#ffffff');
+  const midColor = interpolateHexColor('#000000', '#ffffff', 0.5);
+  assert.notEqual(midColor, '#000000');
+  assert.notEqual(midColor, '#ffffff');
+
+  const cfStart = computeLightingCrossfadeState(
+    { colorHex: '#d4944e', intensity: 0.6 },
+    { colorHex: '#67e8f9', intensity: 1.8 },
+    0,
+    LIGHTING_CROSSFADE_DURATION_MS
+  );
+  assert.equal(cfStart.isTransitioning, true);
+  assert.equal(cfStart.intensity, 0.6);
+
+  const cfMid = computeLightingCrossfadeState(
+    { colorHex: '#d4944e', intensity: 0.6 },
+    { colorHex: '#67e8f9', intensity: 1.8 },
+    125,
+    LIGHTING_CROSSFADE_DURATION_MS
+  );
+  assert.equal(cfMid.isTransitioning, true);
+  assert.ok(cfMid.intensity > 0.6 && cfMid.intensity < 1.8);
+
+  const cfDone = computeLightingCrossfadeState(
+    { colorHex: '#d4944e', intensity: 0.6 },
+    { colorHex: '#67e8f9', intensity: 1.8 },
+    250,
+    LIGHTING_CROSSFADE_DURATION_MS
+  );
+  assert.equal(cfDone.isTransitioning, false);
+  assert.equal(cfDone.intensity, 1.8);
+  assert.equal(cfDone.colorHex, '#67e8f9');
+
+  // 3. AI Lighting Mood Auto-Director coordinates fixtures across the floor and initiates 250ms crossfade
+  assert.ok(LIGHTING_MOOD_QUICK_PROMPTS.length >= 5);
+  const sampleAssets: PlacedAsset[] = [
+    {
+      id: 'dir_lamp_1',
+      name: '1978 Brass Desk Lamp',
+      category: 'lighting',
+      subType: 'lamp_desk',
+      floor: 'lobby',
+      position: [-2, 0.8, 1],
+      dimensions: [0.4, 0.6, 0.4],
+      rotationY: 0,
+      color: '#d4944e',
+      textureId: 'aged_brass',
+      collidable: true
+    },
+    {
+      id: 'dir_tv_2',
+      name: '1978 Woodgrain Console CRT TV',
+      category: 'appliance',
+      subType: 'crt_tv_console',
+      floor: 'lobby',
+      position: [2, 0.6, -1],
+      dimensions: [0.9, 0.8, 0.6],
+      rotationY: 0,
+      color: '#5c3a21',
+      textureId: 'oak_parquet',
+      collidable: true
+    }
+  ];
+
+  const brownoutDirective = buildLightingMoodDirectiveFromPrompt(
+    'Power Grid Brownout with stuttering 6 FPS amber bulbs',
+    'lobby',
+    sampleAssets
+  );
+  assert.equal(brownoutDirective.moodTitle, 'Power Grid Brownout');
+  assert.equal(brownoutDirective.defaultFps, 6);
+  assert.equal(brownoutDirective.assignments.length, 2);
+
+  const applied = applyLightingMoodDirectiveToAssets(sampleAssets, 'lobby', brownoutDirective, 5000);
+  assert.equal(applied.updatedCount, 2);
+  assert.equal(applied.updatedAssets[0].customAnimationFps, 6);
+  assert.equal(applied.updatedAssets[0].lightingTransitionStartMs, 5000);
+  assert.equal(applied.updatedAssets[0].prevLightColorHex, '#d4944e');
+  assert.equal(applied.updatedAssets[0].isActivated, true);
+});
+
+

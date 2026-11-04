@@ -640,16 +640,17 @@ export function buildAssetMeshGroup(
         partNameLower.includes('display') ||
         partNameLower.includes('glass');
 
+      const userEmissionMult = Math.max(0.1, Number(asset.emissionIntensity ?? asset.lightIntensity ?? 1.0));
       let partColorHex = part.color;
       let partEmissiveHex = part.emissive || '#000000';
-      let partEmissiveIntensity = part.emissive ? 0.45 : 0;
+      let partEmissiveIntensity = part.emissive ? 0.45 * userEmissionMult : 0;
 
       if (interactionState.interactionKind === 'tv_screen' && isScreenPart) {
         hasDedicatedScreenPart = true;
         if (interactionState.isActivated) {
-          partColorHex = '#ffffff';
-          partEmissiveHex = '#ffffff';
-          partEmissiveIntensity = 1.45;
+          partColorHex = interactionState.screenColorHex || '#ffffff';
+          partEmissiveHex = interactionState.screenEmissiveHex || '#ffffff';
+          partEmissiveIntensity = interactionState.screenEmissiveIntensity || 1.45 * userEmissionMult;
         }
       } else if (interactionState.isActivated && part.emissive) {
         partEmissiveHex = interactionState.screenEmissiveHex;
@@ -664,7 +665,10 @@ export function buildAssetMeshGroup(
         emissiveIntensity: partEmissiveIntensity
       });
       const mesh = new THREE.Mesh(geo, pMat);
-      mesh.userData = { isTvScreen: isScreenPart && interactionState.interactionKind === 'tv_screen' };
+      mesh.userData = {
+        isTvScreen: isScreenPart && interactionState.interactionKind === 'tv_screen',
+        baseEmissiveIntensity: partEmissiveIntensity
+      };
       mesh.position.set(part.offset[0], part.offset[1] - h / 2, part.offset[2]);
       if (part.rotation) {
         mesh.rotation.set(part.rotation[0], part.rotation[1], part.rotation[2]);
@@ -838,16 +842,19 @@ export function buildAssetMeshGroup(
     const lampStem = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.08, 0.36, 10), brassAccentMat);
     lampStem.position.set(0, h * 0.32, -0.1);
     const isLampOn = asset.isActivated !== false;
+    const lampEmissionMult = Math.max(0.1, Number(asset.emissionIntensity ?? asset.lightIntensity ?? 1.0));
+    const lampBaseEmissive = isLampOn ? 1.15 * lampEmissionMult : 0.15;
     const lampShade = new THREE.Mesh(
       new THREE.ConeGeometry(0.24, 0.18, 14),
       new THREE.MeshStandardMaterial({
-        color: new THREE.Color(isLampOn ? '#fef3c7' : asset.color),
-        emissive: new THREE.Color(isLampOn ? '#fde68a' : '#2a2214'),
-        emissiveIntensity: isLampOn ? 1.15 : 0.15,
+        color: new THREE.Color(isLampOn ? interactionState.lightColorHex || '#fef3c7' : asset.color),
+        emissive: new THREE.Color(isLampOn ? interactionState.lightColorHex || '#fde68a' : '#2a2214'),
+        emissiveIntensity: lampBaseEmissive,
         roughness: 0.35,
         metalness: 0.25
       })
     );
+    lampShade.userData = { baseEmissiveIntensity: lampBaseEmissive };
     lampShade.position.set(0, h * 0.48, -0.1);
     group.add(deskTop, leftPedestal, rightPedestal, lampStem, lampShade);
   } else if (asset.category === 'floor_tile') {
@@ -884,10 +891,13 @@ export function buildAssetMeshGroup(
         ? '#ffffff'
         : '#10b981'
       : '#000000';
+    const screenBaseEmissive = interactionState.isActivated
+      ? interactionState.screenEmissiveIntensity || 1.45
+      : 0.05;
     const screenMat = new THREE.MeshStandardMaterial({
       color: new THREE.Color(screenColor),
       emissive: new THREE.Color(screenEmissive),
-      emissiveIntensity: interactionState.isActivated ? 1.45 : 0.05,
+      emissiveIntensity: screenBaseEmissive,
       roughness: 0.16,
       metalness: 0.22
     });
@@ -896,21 +906,28 @@ export function buildAssetMeshGroup(
       screenMat
     );
     screenPanel.name = 'interactiveScreenPanel';
-    screenPanel.userData = { isTvScreen: true };
+    screenPanel.userData = { isTvScreen: true, baseEmissiveIntensity: screenBaseEmissive };
     screenPanel.position.set(-w * 0.05, h * 0.04, d * 0.46);
     group.add(screenPanel);
   }
 
   // Emit interactive PointLight glow when a TV ("white on"), lamp, computer, or appliance is activated
   if (interactionState.isActivated && interactionState.emitsLight) {
+    const resolvedLightInt =
+      interactionState.lightIntensity > 0
+        ? interactionState.lightIntensity
+        : interactionState.interactionKind === 'tv_screen'
+        ? 1.35
+        : 0.9;
     const activeLight = new THREE.PointLight(
       new THREE.Color(interactionState.lightColorHex),
-      interactionState.interactionKind === 'tv_screen' ? 1.35 : 0.9,
-      interactionState.interactionKind === 'tv_screen' ? 5.5 : 4.2,
+      resolvedLightInt,
+      interactionState.lightDistance || (interactionState.interactionKind === 'tv_screen' ? 5.5 : 4.2),
       1.6
     );
     activeLight.position.set(0, h * 0.15, d * 0.65);
     activeLight.name = 'interactiveStateLight';
+    activeLight.userData = { baseIntensity: resolvedLightInt };
     group.add(activeLight);
   }
 

@@ -97,7 +97,10 @@ import {
   resolveAssetInteractionAnimationGesture,
   isInvisibleTriggerAsset,
   evaluateInvisibleTriggersAtPosition,
-  resetRoomToDefaultArchitecture
+  resetRoomToDefaultArchitecture,
+  buildLightingMoodDirectiveFromPrompt,
+  applyLightingMoodDirectiveToAssets,
+  LightingMoodDirective
 } from './game/rules';
 import {
   INITIAL_PLACED_ASSETS,
@@ -1781,6 +1784,11 @@ export default function App() {
       rotationDeltaY?: number;
       hingeSwingMode?: HingeSwingMode;
       isSecretPassage?: boolean;
+      emissionIntensity?: number;
+      lightIntensity?: number;
+      isLightEmitting?: boolean;
+      lightingPreset?: string;
+      customAnimationFps?: number | null;
     }) => {
       const targetIds =
         selectedAssetIds.length > 0
@@ -1804,6 +1812,50 @@ export default function App() {
       );
     },
     [selectedAssetIds, selectedAssetId, recordUndoSnapshot]
+  );
+
+  // AI Lighting Mood Auto-Director (gemini-3.1-flash-lite + 250ms smooth crossfade across all floor fixtures)
+  const handleAutoDirectFloorLighting = useCallback(
+    async (moodPrompt: string) => {
+      const cleanMood = (moodPrompt || '').trim() || '1978 Noir Detective Interrogation';
+      recordUndoSnapshot(`AI Lighting Mood: ${cleanMood}`);
+
+      // Immediate local deterministic application so 250ms crossfade begins with zero latency
+      const localDirective = buildLightingMoodDirectiveFromPrompt(cleanMood, currentFloor, assets);
+      const immediateRes = applyLightingMoodDirectiveToAssets(assets, currentFloor, localDirective);
+      setAssets(immediateRes.updatedAssets);
+      setStatusBanner(immediateRes.message);
+
+      try {
+        const resp = await fetch('/api/lighting/auto-direct', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            moodPrompt: cleanMood,
+            floor: currentFloor,
+            assets: assets.filter((a) => a.floor === currentFloor)
+          })
+        });
+        if (resp.ok) {
+          const data = (await resp.json()) as {
+            directive?: LightingMoodDirective;
+            source?: string;
+          };
+          if (data.directive && data.source === 'gemini-3.1-flash-lite') {
+            setAssets((prev) => {
+              const refined = applyLightingMoodDirectiveToAssets(prev, currentFloor, data.directive!);
+              return refined.updatedAssets;
+            });
+            setStatusBanner(
+              `🎬 AI Lighting Director (${data.source}): Applied "${data.directive.moodTitle}" — ${data.directive.summary}`
+            );
+          }
+        }
+      } catch {
+        // Immediate deterministic directive is already active
+      }
+    },
+    [assets, currentFloor, recordUndoSnapshot]
   );
 
   // Toggle hinged door / secret wall swing preview with smooth 500ms hinge transition + synchronized Foley (Proposals 1 & 2)
@@ -3725,6 +3777,7 @@ export default function App() {
           selectedAgent={selectedAgent}
           onUpdateAgent={handleUpdateAgentFromQuickEdit}
           onClearAgentSelection={() => setSelectedAgentId(null)}
+          onAutoDirectLighting={handleAutoDirectFloorLighting}
           onOpenCharacterCreator={(ag) => {
             setCustomAppearance(ag.appearance);
             setQuickEditWindowOpen(false);
