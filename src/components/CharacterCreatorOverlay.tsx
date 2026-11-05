@@ -35,7 +35,8 @@ import {
   GeminiPrebuiltVoiceName,
   CharacterVoiceProfile,
   inferVoiceProfileFromArchetypeAndName,
-  computeCharacterCreatorWheelZoom
+  computeCharacterCreatorWheelZoom,
+  computeCharacterCreatorCursorZoomState
 } from '../game/rules';
 import { StudioWindowFrame } from './StudioWindowFrame';
 
@@ -783,66 +784,6 @@ export const CharacterCreatorOverlay: React.FC<CharacterCreatorOverlayProps> = (
 
   return (
     <>
-      {/* Floating 3D Character Viewport Scroll-Wheel Zoom HUD Pill */}
-      <div
-        data-testid="character-creator-wheel-zoom-hud"
-        onWheel={(e) => {
-          const nextZoom = computeCharacterCreatorWheelZoom(
-            appearance.cameraZoom,
-            e.deltaY,
-            e.deltaMode
-          );
-          onChangeAppearance({
-            ...appearance,
-            cameraZoom: nextZoom
-          });
-        }}
-        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-20 pointer-events-auto bg-slate-900/95 backdrop-blur-md border border-slate-700/90 rounded-full px-3.5 py-1.5 shadow-xl flex items-center gap-2.5 text-xs text-slate-200"
-      >
-        <span className="text-[11px] font-bold text-emerald-400">
-          🖱️ Scroll Wheel Zoom:
-        </span>
-        <span className="text-[10px] text-slate-300">
-          Scroll Forward = Zoom In · Scroll Backward = Zoom Out
-        </span>
-        <div className="flex items-center gap-1 pl-1 border-l border-slate-700">
-          <button
-            type="button"
-            data-testid="char-hud-zoom-in-btn"
-            onClick={() =>
-              onChangeAppearance({
-                ...appearance,
-                cameraZoom: computeCharacterCreatorWheelZoom(appearance.cameraZoom, -100, 0)
-              })
-            }
-            className="px-2 py-0.5 rounded-full bg-slate-800 hover:bg-slate-700 text-emerald-300 font-bold text-[10px]"
-            title="Zoom In (Scroll Forward)"
-          >
-            + In
-          </button>
-          <span
-            data-testid="char-hud-zoom-readout"
-            className="font-mono font-bold text-sky-300 text-[11px] min-w-[42px] text-center"
-          >
-            {(appearance.cameraZoom ?? 3.45).toFixed(2)}m
-          </span>
-          <button
-            type="button"
-            data-testid="char-hud-zoom-out-btn"
-            onClick={() =>
-              onChangeAppearance({
-                ...appearance,
-                cameraZoom: computeCharacterCreatorWheelZoom(appearance.cameraZoom, 100, 0)
-              })
-            }
-            className="px-2 py-0.5 rounded-full bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-[10px]"
-            title="Zoom Out (Scroll Backward)"
-          >
-            - Out
-          </button>
-        </div>
-      </div>
-
       {/* 1. CREATE-A-CHARACTER APPEARANCE & MESH RIG WINDOW */}
       <StudioWindowFrame
         windowState={windows.char_appearance}
@@ -1091,24 +1032,39 @@ export const CharacterCreatorOverlay: React.FC<CharacterCreatorOverlayProps> = (
             <div
               onWheel={(e) => {
                 e.stopPropagation();
-                const nextZoom = computeCharacterCreatorWheelZoom(
-                  appearance.cameraZoom,
+                const safeW = Math.max(1, window.innerWidth);
+                const safeH = Math.max(1, window.innerHeight);
+                const cursorNdcX = (e.clientX / safeW) * 2 - 1;
+                const cursorNdcY = -((e.clientY / safeH) * 2 - 1);
+                const zoomState = computeCharacterCreatorCursorZoomState(
+                  appearance,
                   e.deltaY,
-                  e.deltaMode
+                  e.deltaMode,
+                  cursorNdcX,
+                  cursorNdcY,
+                  safeW / safeH,
+                  55
                 );
                 onChangeAppearance({
                   ...appearance,
-                  cameraZoom: nextZoom
+                  cameraZoom: zoomState.cameraZoom,
+                  cameraTargetX: zoomState.cameraTargetX,
+                  cameraTargetY: zoomState.cameraTargetY
                 });
               }}
               className="pt-1 border-t border-slate-200/60 space-y-1"
             >
               <div className="flex items-center justify-between text-[11px]">
                 <span className="font-semibold text-slate-600">
-                  Camera Zoom (Scroll Wheel: Forward=In, Back=Out)
+                  Camera Zoom (Scroll at Cursor)
                 </span>
-                <span className="font-mono font-bold text-[#0284c7]">
-                  {(appearance.cameraZoom ?? 3.45).toFixed(2)}m
+                <span
+                  data-testid="char-creator-zoom-readout"
+                  className="font-mono font-bold text-[#0284c7]"
+                >
+                  {(appearance.cameraZoom ?? 3.45).toFixed(2)}m · (
+                  {(appearance.cameraTargetX ?? 0).toFixed(2)},{' '}
+                  {(appearance.cameraTargetY ?? 0.68).toFixed(2)})
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
@@ -1155,11 +1111,13 @@ export const CharacterCreatorOverlay: React.FC<CharacterCreatorOverlayProps> = (
                   onClick={() =>
                     onChangeAppearance({
                       ...appearance,
-                      cameraZoom: 3.45
+                      cameraZoom: 3.45,
+                      cameraTargetX: 0,
+                      cameraTargetY: 0.68
                     })
                   }
                   className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold rounded text-[10px]"
-                  title="Reset Zoom"
+                  title="Reset Zoom & Cursor Target"
                 >
                   Reset
                 </button>

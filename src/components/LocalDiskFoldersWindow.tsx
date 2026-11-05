@@ -59,6 +59,7 @@ interface LocalDiskFoldersWindowProps {
   onRefreshStatus: () => void;
   lastSavedBanner: string | null;
   onExportStandaloneHtml: () => void;
+  onDownloadFullLocalInstaller?: (os: 'windows' | 'unix') => void;
   onSaveDescriptionFile?: (filename: string, content: string) => Promise<void>;
   onRunBatchDescriptionImport?: (filename: string, rawContent?: string) => Promise<void>;
   batchImportBusy?: boolean;
@@ -85,6 +86,7 @@ export const LocalDiskFoldersWindow: React.FC<LocalDiskFoldersWindowProps> = ({
   onRefreshStatus,
   lastSavedBanner,
   onExportStandaloneHtml,
+  onDownloadFullLocalInstaller,
   onSaveDescriptionFile,
   onRunBatchDescriptionImport,
   batchImportBusy = false,
@@ -247,19 +249,29 @@ export const LocalDiskFoldersWindow: React.FC<LocalDiskFoldersWindowProps> = ({
           <div className="flex items-center gap-1">
             <button
               type="button"
-              onClick={() => handleDownloadSetupScript('bat')}
-              className="px-2 py-0.5 rounded bg-stone-800 hover:bg-stone-700 border border-stone-600 text-stone-200 text-[10px]"
-              title="Download Windows batch script that creates the dedicated folders on your PC"
+              data-testid="download-local-installer-win-btn"
+              onClick={() =>
+                onDownloadFullLocalInstaller
+                  ? onDownloadFullLocalInstaller('windows')
+                  : handleDownloadSetupScript('bat')
+              }
+              className="px-2 py-0.5 rounded bg-amber-600/35 hover:bg-amber-600/50 border border-amber-400/80 text-amber-100 text-[10px] font-bold"
+              title="Download Full Windows Local Device Installer (Prepares Folders, Imports All Assets, Unpacks Standalone App & Adds Desktop Shortcut)"
             >
-              ⬇ Windows (.bat)
+              📦 Local Installer (.bat)
             </button>
             <button
               type="button"
-              onClick={() => handleDownloadSetupScript('sh')}
-              className="px-2 py-0.5 rounded bg-stone-800 hover:bg-stone-700 border border-stone-600 text-stone-200 text-[10px]"
-              title="Download Mac/Linux shell script that creates the dedicated folders"
+              data-testid="download-local-installer-unix-btn"
+              onClick={() =>
+                onDownloadFullLocalInstaller
+                  ? onDownloadFullLocalInstaller('unix')
+                  : handleDownloadSetupScript('sh')
+              }
+              className="px-2 py-0.5 rounded bg-sky-600/35 hover:bg-sky-600/50 border border-sky-400/80 text-sky-100 text-[10px] font-bold"
+              title="Download Full Mac/Linux Local Device Installer (Prepares Folders, Imports All Assets, Unpacks Standalone App & Adds Desktop Shortcut)"
             >
-              ⬇ Mac/Linux (.sh)
+              📦 Local Installer (.sh)
             </button>
             <button
               type="button"

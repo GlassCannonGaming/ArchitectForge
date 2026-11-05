@@ -1495,6 +1495,14 @@ ${fixtureListText || '(Use default floor mood values)'}`,
     if (!fs.existsSync(readmePath)) {
       fs.writeFileSync(readmePath, scripts.readmeTxt, 'utf-8');
     }
+    const winInstallerPath = path.join(__dirname, 'Install_ArchitectForge_Local.bat');
+    if (!fs.existsSync(winInstallerPath)) {
+      fs.writeFileSync(winInstallerPath, scripts.windowsBat, 'utf-8');
+    }
+    const unixInstallerPath = path.join(__dirname, 'Install_ArchitectForge_Local.sh');
+    if (!fs.existsSync(unixInstallerPath)) {
+      fs.writeFileSync(unixInstallerPath, scripts.unixSh, { encoding: 'utf-8', mode: 0o755 });
+    }
     // Seed initial starter records in dedicated folders if completely empty
     const seedHelper = (category: LocalFolderCategory, name: string, suffix: string, payload: unknown) => {
       const spec = getLocalFolderSpec(category);

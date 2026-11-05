@@ -512,7 +512,7 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
                 <div className="flex justify-between text-[10px] font-bold">
                   <span className="text-slate-700">Expression &amp; Spine Stoop</span>
                   <span className="font-mono text-slate-600">
-                    {selectedAgent.appearance?.spineCurvatureDeg ?? 10}°
+                    {selectedAgent.appearance?.spineCurvature ?? 10}°
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-1 mt-0.5">
@@ -546,10 +546,10 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
                     type="range"
                     min={0}
                     max={45}
-                    value={selectedAgent.appearance?.spineCurvatureDeg ?? 10}
+                    value={selectedAgent.appearance?.spineCurvature ?? 10}
                     onChange={(e) =>
                       updateAppearanceField({
-                        spineCurvatureDeg: Number(e.target.value)
+                        spineCurvature: Number(e.target.value)
                       })
                     }
                     className="w-full accent-[#0284c7] h-1.5 self-center cursor-pointer"

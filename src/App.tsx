@@ -106,7 +106,8 @@ import {
   resetRoomToDefaultArchitecture,
   buildLightingMoodDirectiveFromPrompt,
   applyLightingMoodDirectiveToAssets,
-  LightingMoodDirective
+  LightingMoodDirective,
+  buildFullLocalDeviceInstallerBundle
 } from './game/rules';
 import {
   INITIAL_PLACED_ASSETS,
@@ -2022,8 +2023,11 @@ export default function App() {
 
       setAssets(evalRes.updatedAssets);
       const primaryTrigger = newlyFired[0];
-      if (primaryTrigger.soundPresetId) {
-        audioEngine.playSoundEffect(primaryTrigger.soundPresetId);
+      const sfxSpec = primaryTrigger.soundPresetId
+        ? BUILTIN_SOUND_EFFECTS[primaryTrigger.soundPresetId as keyof typeof BUILTIN_SOUND_EFFECTS]
+        : undefined;
+      if (sfxSpec) {
+        audioEngine.playSoundEffect(sfxSpec);
       } else {
         soundFX.playClueFound();
       }
@@ -3052,6 +3056,54 @@ export default function App() {
     }
   }, [buildCurrentProjectSnapshot]);
 
+  // Download a full local device installer (.bat for Windows, .sh for macOS/Linux) that prepares folders, imports all assets, unpacks the standalone app, and creates a Desktop shortcut
+  const handleDownloadFullLocalInstaller = useCallback(
+    async (os: 'windows' | 'unix') => {
+      const snap = buildCurrentProjectSnapshot();
+      let standaloneHtml: string | undefined;
+      try {
+        const res = await fetch('/api/export/standalone-html', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectSnapshot: snap })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (typeof data.html === 'string') {
+            standaloneHtml = data.html;
+          }
+        }
+      } catch {
+        // Fallback offline HTML snapshot
+        standaloneHtml = `<!doctype html>\n${document.documentElement.outerHTML}`;
+      }
+
+      const bundle = buildFullLocalDeviceInstallerBundle(snap, standaloneHtml);
+      const isWin = os === 'windows';
+      const filename = isWin
+        ? bundle.installerWindowsBatFilename
+        : bundle.installerUnixShFilename;
+      const content = isWin
+        ? bundle.installerWindowsBatContent
+        : bundle.installerUnixShContent;
+
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      setStatusBanner(
+        `📦 Downloaded Full Local Device Installer "${filename}" — Prepares ${bundle.foldersPrepared.length} folders, imports ${bundle.importedCounts.placedAssets} assets & ${bundle.importedCounts.roomBlueprints} blueprints, and adds "${bundle.desktopShortcutName}" Desktop shortcut!`
+      );
+    },
+    [buildCurrentProjectSnapshot]
+  );
+
   // If running from a downloaded Standalone HTML file with an embedded project snapshot, load it on boot
   useEffect(() => {
     const win = window as unknown as { __STANDALONE_INITIAL_PROJECT__?: unknown };
@@ -3917,33 +3969,6 @@ export default function App() {
                   <circle cx="12" cy="12" r="3" />
                 </svg>
               </button>
-
-              <button
-                type="button"
-                data-testid="toggle-lighting-btn"
-                title={
-                  lightingEnabled
-                    ? 'Lighting ENABLED — Click to turn off scene lighting'
-                    : 'Lighting DISABLED — Click to turn on scene lighting'
-                }
-                onClick={() => {
-                  setLightingEnabled((v) => {
-                    const next = !v;
-                    setStatusBanner(
-                      next ? '💡 Scene lighting turned ON.' : '💡 Scene lighting turned OFF.'
-                    );
-                    return next;
-                  });
-                }}
-                className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all flex items-center gap-1 shrink-0 ${
-                  lightingEnabled
-                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50'
-                    : 'bg-slate-800 text-slate-400 border border-slate-700'
-                }`}
-              >
-                <span>💡</span>
-                <span>{lightingEnabled ? 'Light: ON' : 'Light: OFF'}</span>
-              </button>
             </div>
 
             {/* B. App Name (Centered in Title Section) */}
@@ -3971,23 +3996,34 @@ export default function App() {
               </div>
             </div>
 
-            {/* C. Folder / Save/Load / Files / Projects / Key Binds (Right circular hub + utility buttons) */}
+            {/* C. Folder / Save/Load / Files / Projects / Key Binds (Right circular hub) */}
             <div
               data-testid="section-c-utility-hub"
               className="flex items-center gap-1.5 justify-self-end"
             >
-              {/*Segmented Circular Hub Icon matching Sketch C */}
+              {/* Segmented Circular Hub Icon matching Sketch C */}
               <div
                 title="C. Folder / Save & Load / Files / Projects / Key Binds Hub"
                 className="w-9 h-9 rounded-full bg-slate-800 border-2 border-sky-400/70 grid grid-cols-2 grid-rows-2 overflow-hidden p-0.5 gap-0.5 shrink-0 shadow-md"
               >
                 <button
                   type="button"
+                  data-testid="open-local-folders-btn"
                   title="Local Workspace Folders & Files"
                   onClick={() => {
-                    refreshLocalDiskFoldersStatus();
-                    handleToggleOpenWindow('local_fs', true);
-                    handleFocusWindow('local_fs');
+                    setStudioWindows((prev) => {
+                      const result = handleTaskbarWindowButtonClick(
+                        prev,
+                        'local_fs',
+                        mode,
+                        window.innerWidth,
+                        window.innerHeight
+                      );
+                      if (result.action !== 'closed') {
+                        refreshLocalDiskFoldersStatus();
+                      }
+                      return result.windows;
+                    });
                   }}
                   className="bg-slate-700/80 hover:bg-sky-600 text-[9px] flex items-center justify-center rounded-tl-full transition-colors"
                 >
@@ -3995,10 +4031,18 @@ export default function App() {
                 </button>
                 <button
                   type="button"
+                  data-testid="open-project-manager-btn"
                   title="Save / Load Projects"
                   onClick={() => {
-                    handleToggleOpenWindow('projects', true);
-                    handleFocusWindow('projects');
+                    setStudioWindows((prev) =>
+                      handleTaskbarWindowButtonClick(
+                        prev,
+                        'projects',
+                        mode,
+                        window.innerWidth,
+                        window.innerHeight
+                      ).windows
+                    );
                   }}
                   className="bg-slate-700/80 hover:bg-emerald-600 text-[9px] flex items-center justify-center rounded-tr-full transition-colors"
                 >
@@ -4006,78 +4050,23 @@ export default function App() {
                 </button>
                 <button
                   type="button"
+                  data-testid="open-keybindings-btn"
                   title="Key Binds & Shortcuts [K]"
                   onClick={() => {
-                    handleToggleOpenWindow('keybindings', true);
-                    handleFocusWindow('keybindings');
+                    setStudioWindows((prev) =>
+                      handleTaskbarWindowButtonClick(
+                        prev,
+                        'keybindings',
+                        mode,
+                        window.innerWidth,
+                        window.innerHeight
+                      ).windows
+                    );
                   }}
                   className="col-span-2 bg-slate-700/80 hover:bg-amber-600 text-[9px] flex items-center justify-center rounded-b-full transition-colors"
                 >
                   ⌨️
                 </button>
-              </div>
-
-              {/* Explicit Pill Buttons for C: Folder/Files, Save/Load Projects, Key Binds */}
-              <div className="flex items-center gap-1 bg-slate-800/90 border border-slate-700 rounded-full p-0.5">
-                {[
-                  {
-                    winId: 'local_fs' as StudioWindowId,
-                    testId: 'open-local-folders-btn',
-                    label: '📁 Folders / Files'
-                  },
-                  {
-                    winId: 'projects' as StudioWindowId,
-                    testId: 'open-project-manager-btn',
-                    label: '💾 Save / Load'
-                  },
-                  {
-                    winId: 'keybindings' as StudioWindowId,
-                    testId: 'open-keybindings-btn',
-                    label: '⌨️ Key Binds'
-                  }
-                ].map((item) => {
-                  const win = studioWindows[item.winId] || createDefaultStudioWindows()[item.winId];
-                  const isVisible = Boolean(win && win.isOpen && !win.isMinimized);
-                  return (
-                    <button
-                      key={item.winId}
-                      type="button"
-                      data-testid={item.testId}
-                      onClick={() => {
-                        setStudioWindows((prev) => {
-                          const result = handleTaskbarWindowButtonClick(
-                            prev,
-                            item.winId,
-                            mode,
-                            window.innerWidth,
-                            window.innerHeight
-                          );
-                          if (item.winId === 'local_fs' && result.action !== 'closed') {
-                            refreshLocalDiskFoldersStatus();
-                          }
-                          const label = result.windowState.title || result.windowState.shortTitle;
-                          if (result.action === 'opened') {
-                            setStatusBanner(`Opened ${label} window.`);
-                          } else if (result.action === 'restored') {
-                            setStatusBanner(`Restored ${label} window.`);
-                          } else if (result.action === 'focused') {
-                            setStatusBanner(`Brought ${label} window to front.`);
-                          } else {
-                            setStatusBanner(`Closed ${label} window.`);
-                          }
-                          return result.windows;
-                        });
-                      }}
-                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all whitespace-nowrap ${
-                        isVisible
-                          ? 'bg-sky-600 text-white shadow-2xs'
-                          : 'text-slate-300 hover:text-white hover:bg-slate-700'
-                      }`}
-                    >
-                      {item.label}
-                    </button>
-                  );
-                })}
               </div>
             </div>
           </div>
@@ -4133,7 +4122,9 @@ export default function App() {
             aria-label="E. Mode Specific Feature Buttons"
             className="pointer-events-auto flex flex-wrap items-center justify-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/90 px-3 py-1 rounded-full shadow-xl"
           >
-            {getModeFeatureButtons(mode).map((featBtn: ModeFeatureButtonSpec) => {
+            {getModeFeatureButtons(mode)
+              .filter((_, idx) => idx < 3)
+              .map((featBtn: ModeFeatureButtonSpec) => {
               const isCatalogWinOpen = Boolean(
                 studioWindows.catalog?.isOpen && !studioWindows.catalog?.isMinimized
               );
@@ -4200,14 +4191,20 @@ export default function App() {
               );
             })}
 
-            {/* Divider + Studio Window Drawer buttons so Tools / Catalog / Inspector / Reset Layout remain one-click accessible */}
+            {/* Divider + Studio Window Drawer buttons so Tools / Catalog / Inspector remain one-click accessible */}
             <span className="h-4 w-px bg-slate-700 mx-0.5" />
             <div
               aria-label="Studio Window Taskbar"
               className="flex items-center gap-1 text-[10px]"
             >
               {getTaskbarWindowIdsForMode(mode)
-                .filter((winId) => winId !== 'local_fs' && winId !== 'projects' && winId !== 'keybindings')
+                .filter(
+                  (winId) =>
+                    winId !== 'local_fs' &&
+                    winId !== 'projects' &&
+                    winId !== 'keybindings' &&
+                    winId !== 'layers'
+                )
                 .map((winId) => {
                   const win = studioWindows[winId] || createDefaultStudioWindows()[winId];
                   const isVisible = Boolean(win && win.isOpen && !win.isMinimized);
@@ -4243,14 +4240,6 @@ export default function App() {
                     </button>
                   );
                 })}
-              <button
-                type="button"
-                onClick={handleResetWindowLayout}
-                title="Reset all windows to default positions & sizes [H]"
-                className="px-2 py-0.5 rounded-full bg-amber-950/90 hover:bg-amber-900 text-amber-200 border border-amber-700/70 font-bold text-[10px]"
-              >
-                Reset Layout
-              </button>
             </div>
           </div>
         </div>
@@ -4362,6 +4351,7 @@ export default function App() {
           onRefreshStatus={refreshLocalDiskFoldersStatus}
           lastSavedBanner={lastSavedFolderBanner}
           onExportStandaloneHtml={handleDownloadStandaloneHtmlApp}
+          onDownloadFullLocalInstaller={handleDownloadFullLocalInstaller}
           onSaveDescriptionFile={handleSaveDescriptionFile}
           onRunBatchDescriptionImport={handleRunBatchDescriptionImport}
           batchImportBusy={batchImportBusy}

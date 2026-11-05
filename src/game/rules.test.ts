@@ -3732,8 +3732,9 @@ test('Shared Character Interact Animations, Batch Condition Variant Swap, Invisi
   } = await import('./rules');
 
   // 1. Test Shared Character Interact Animations across distinct character rigs
-  const matronAppearance = getArchetypeDefaults('Elderly Matron').appearance;
-  const clerkAppearance = getArchetypeDefaults('Detective Clerk').appearance;
+  const matronAppearance = getArchetypeDefaults('Elderly Matron');
+  const clerkAppearance = getArchetypeDefaults('Detective Clerk');
+  assert.ok(matronAppearance && clerkAppearance);
 
   const sharedGestures = [
     'sit_chair',
@@ -3827,7 +3828,7 @@ test('Shared Character Interact Animations, Batch Condition Variant Swap, Invisi
     ...chairAsset,
     id: 'test_notebook',
     name: 'Investigator Evidence Notebook',
-    category: 'clue',
+    category: 'clue_prop',
     subType: 'investigator_notebook_prop'
   };
   assert.equal(resolveAssetInteractionAnimationGesture(notebookAsset), 'pickup_item');
@@ -3867,8 +3868,8 @@ test('Shared Character Interact Animations, Batch Condition Variant Swap, Invisi
       pairedVariantId: tvBp.pairedVariantId
     },
     {
-      id: 'unselected_chair_3',
       ...chairAsset,
+      id: 'unselected_chair_3',
       floor: 'floor1',
       conditionVariant: 'pristine'
     }
@@ -3906,7 +3907,7 @@ test('Shared Character Interact Animations, Batch Condition Variant Swap, Invisi
   const invTrigger: PlacedAsset = {
     id: 'trig_1',
     name: 'Corridor Secret Passage Trigger',
-    category: 'clue',
+    category: 'clue_prop',
     subType: 'invisible_event_trigger',
     floor: 'floor1',
     position: [2, 1.1, 0],
@@ -3953,9 +3954,9 @@ test('Reset Room: clears all placed assets in the active room/floor and restores
   const {
     isArchitecturalAssetCategory,
     buildDefaultRoomArchitectureForFloor,
-    resetRoomToDefaultArchitecture,
-    INITIAL_PLACED_ASSETS
+    resetRoomToDefaultArchitecture
   } = await import('./rules');
+  const { INITIAL_PLACED_ASSETS } = await import('./hotelData');
 
   assert.equal(isArchitecturalAssetCategory('wall'), true);
   assert.equal(isArchitecturalAssetCategory('door'), true);
@@ -3963,7 +3964,7 @@ test('Reset Room: clears all placed assets in the active room/floor and restores
   assert.equal(isArchitecturalAssetCategory('secret_wall'), true);
   assert.equal(isArchitecturalAssetCategory('floor_tile'), true);
   assert.equal(isArchitecturalAssetCategory('furniture'), false);
-  assert.equal(isArchitecturalAssetCategory('clue'), false);
+  assert.equal(isArchitecturalAssetCategory('clue_prop'), false);
 
   const defaultFloor1Arch = buildDefaultRoomArchitectureForFloor('floor1', INITIAL_PLACED_ASSETS);
   assert.equal(defaultFloor1Arch.length >= 6, true);
@@ -3989,7 +3990,7 @@ test('Reset Room: clears all placed assets in the active room/floor and restores
     {
       id: 'f1_custom_clue',
       name: 'Evidence Ledger',
-      category: 'clue',
+      category: 'clue_prop',
       subType: 'guest_ledger',
       floor: 'floor1',
       roomNumber: 'Room 101',
@@ -4556,13 +4557,13 @@ test('Lighting systems and effects fixes: customAnimationFps reset, mood light o
   assert.equal(bp.items[0].emissionIntensity, 1.8);
   assert.equal(bp.items[0].customAnimationFps, 6);
 
-  const instantiated = instantiateRoomBlueprintOnFloor(bp, 'floor2', [0, 0]);
+  const instantiated = instantiateRoomBlueprintOnFloor(bp, 'floor2', 0, 0);
   assert.equal(instantiated[0].lightingPreset, 'neon_cyber');
   assert.equal(instantiated[0].emissionIntensity, 1.8);
   assert.equal(instantiated[0].customAnimationFps, 6);
 
-  const clip = copySelectedAssetsToClipboard(withCustomFps, ['lamp_test_1']);
-  const pasted = pasteAssetsFromClipboard(clip, 'floor1', [1, 1]);
+  const clip = copySelectedAssetsToClipboard(withCustomFps, ['lamp_test_1'], 'lamp_test_1');
+  const pasted = pasteAssetsFromClipboard(clip, 'floor1', 1, [1, 1]);
   assert.equal(pasted.pastedAssets[0].lightingPreset, 'neon_cyber');
   assert.equal(pasted.pastedAssets[0].emissionIntensity, 1.8);
   assert.equal(pasted.pastedAssets[0].customAnimationFps, 6);
@@ -4571,18 +4572,18 @@ test('Lighting systems and effects fixes: customAnimationFps reset, mood light o
   const flickerTrigger: PlacedAsset = {
     id: 'trig_flicker_1',
     name: 'Corridor Flicker Trigger',
-    category: 'trigger',
+    category: 'clue_prop',
     subType: 'invisible_event_trigger',
     floor: 'floor1',
     position: [0, 1, 0],
     dimensions: [2, 2, 2],
     rotationY: 0,
     color: '#06b6d4',
-    textureId: 'matte_plaster',
+    textureId: 'plaster_cream',
     collidable: false,
     isInvisibleTrigger: true,
     triggerEventType: 'lights_flicker',
-    triggerFired: false
+    hasTriggered: false
   };
   const evalRes = evaluateInvisibleTriggersAtPosition([0, 1, 0], 'floor1', [resetToGlobal[0], flickerTrigger]);
   assert.equal(evalRes.firedTriggers.length, 1);
@@ -4776,6 +4777,98 @@ test('Architect Forge UI Sketch Specification (Sections A-G): Title Section, Mod
   assert.equal(afterRemoveF3.removedLayer?.id, 'floor3');
   assert.equal(afterRemoveF3.nextCurrentFloor, 'floor2');
 });
+
+test('Character Creator mouse cursor zoom target calculation and Full Local Device Installer bundle with asset import & desktop shortcut', async () => {
+  const {
+    computeCharacterCreatorCursorZoomState,
+    buildFullLocalDeviceInstallerBundle,
+    createProjectSnapshot,
+    INITIAL_FLOOR_LAYERS,
+    INITIAL_ROOM_BLUEPRINTS
+  } = await import('./rules');
+  const { INITIAL_PLACED_ASSETS, INITIAL_AGENTS } = await import('./hotelData');
+
+  // 1. Zooming in on top-right cursor (cursorNdcX > 0, cursorNdcY > 0) shifts cameraTargetX right and cameraTargetY up
+  const initialState = { cameraZoom: 3.45, cameraTargetX: 0, cameraTargetY: 0.68 };
+  const zoomedInTopRight = computeCharacterCreatorCursorZoomState(
+    initialState,
+    -120,
+    0,
+    0.65,
+    0.75,
+    1.6,
+    55
+  );
+  assert.equal(zoomedInTopRight.cameraZoom < 3.45, true);
+  assert.equal(zoomedInTopRight.cameraTargetX > 0, true);
+  assert.equal(zoomedInTopRight.cameraTargetY > 0.68, true);
+
+  // Verify exact cursor-locking invariant: the 3D world point under the cursor projects back to (0.65, 0.75) after zooming in
+  const tanHalfFov = Math.tan((27.5 * Math.PI) / 180);
+  const projectedNdcXAfter =
+    (zoomedInTopRight.cursorWorldX - zoomedInTopRight.cameraTargetX) /
+    (zoomedInTopRight.cameraZoom * tanHalfFov * 1.6);
+  const projectedNdcYAfter =
+    (zoomedInTopRight.cursorWorldY - zoomedInTopRight.cameraTargetY) /
+    (zoomedInTopRight.cameraZoom * tanHalfFov);
+  assert.equal(Math.abs(projectedNdcXAfter - 0.65) < 0.002, true);
+  assert.equal(Math.abs(projectedNdcYAfter - 0.75) < 0.002, true);
+
+  // Zooming in on bottom-left cursor (cursorNdcX < 0, cursorNdcY < 0) shifts cameraTargetX left and cameraTargetY down
+  const zoomedInBottomLeft = computeCharacterCreatorCursorZoomState(
+    initialState,
+    -120,
+    0,
+    -0.65,
+    -0.75,
+    1.6,
+    55
+  );
+  assert.equal(zoomedInBottomLeft.cameraZoom < 3.45, true);
+  assert.equal(zoomedInBottomLeft.cameraTargetX < 0, true);
+  assert.equal(zoomedInBottomLeft.cameraTargetY < 0.68, true);
+
+  // Zooming back out smoothly re-centers cameraTarget toward (0, 0.68)
+  const zoomedOutAgain = computeCharacterCreatorCursorZoomState(
+    zoomedInTopRight,
+    120,
+    0,
+    0,
+    0,
+    1.6,
+    55
+  );
+  assert.equal(zoomedOutAgain.cameraZoom > zoomedInTopRight.cameraZoom, true);
+  assert.equal(Math.abs(zoomedOutAgain.cameraTargetX) < Math.abs(zoomedInTopRight.cameraTargetX), true);
+
+  // 2. Full Local Device Installer prepares folders, imports asset data, and creates a Desktop shortcut
+  const snap = createProjectSnapshot({
+    name: 'Local Install Test Project',
+    description: 'Full local installer test',
+    currentFloor: 'lobby',
+    floorLayers: INITIAL_FLOOR_LAYERS,
+    assets: INITIAL_PLACED_ASSETS.slice(0, 12),
+    roomBlueprints: INITIAL_ROOM_BLUEPRINTS,
+    characterRigs: INITIAL_AGENTS,
+    globalInstructionSet: 'Test lore',
+    gameTimeMinutes: 1170,
+    savedInteractions: [],
+    timeOfDayEvents: []
+  });
+
+  const installerBundle = buildFullLocalDeviceInstallerBundle(
+    snap,
+    '<!doctype html><html><body>ArchitectForge Standalone</body></html>'
+  );
+  assert.equal(installerBundle.installerWindowsBatFilename, 'Install_ArchitectForge_Local.bat');
+  assert.equal(installerBundle.installerUnixShFilename, 'Install_ArchitectForge_Local.sh');
+  assert.equal(installerBundle.foldersPrepared.length, 14);
+  assert.equal(installerBundle.importedCounts.placedAssets, 12);
+  assert.equal(installerBundle.installerWindowsBatContent.includes('Architect Forge.lnk'), true);
+  assert.equal(installerBundle.installerWindowsBatContent.includes('project_full_local_install.architectforge.json'), true);
+  assert.equal(installerBundle.installerUnixShContent.includes('ArchitectForge.desktop'), true);
+});
+
 
 
 

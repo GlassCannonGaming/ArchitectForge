@@ -44,6 +44,7 @@ import {
   DEFAULT_SNAP_GRID_SIZE,
   isInvisibleTriggerAsset,
   computeCharacterCreatorWheelZoom,
+  computeCharacterCreatorCursorZoomState,
   selectCulledPointLightIds,
   PointLightCullCandidate,
   MAX_ACTIVE_DYNAMIC_POINT_LIGHTS,
@@ -335,8 +336,13 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
     mode
   ]);
 
-  // Rebuild Character Studio preview when appearance geometry changes (ignoring cameraZoom)
-  const { cameraZoom: _ignoredCameraZoom, ...characterGeometryAppearance } = customCharacterAppearance;
+  // Rebuild Character Studio preview when appearance geometry changes (ignoring cameraZoom and cursor target)
+  const {
+    cameraZoom: _ignoredCameraZoom,
+    cameraTargetX: _ignoredCameraTargetX,
+    cameraTargetY: _ignoredCameraTargetY,
+    ...characterGeometryAppearance
+  } = customCharacterAppearance;
   const characterGeometryKey = JSON.stringify(characterGeometryAppearance);
   useEffect(() => {
     sceneObjectsRef.current?.rebuildCharacterPreview?.();
@@ -1524,17 +1530,32 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
 
     const onWheel = (e: WheelEvent) => {
       if (stateRef.current.mode === 'architect') {
+        e.preventDefault();
         architectOrbit.radius = Math.max(4, Math.min(95, architectOrbit.radius + e.deltaY * 0.015));
       } else if (stateRef.current.mode === 'character') {
-        const nextZoom = computeCharacterCreatorWheelZoom(
-          stateRef.current.customCharacterAppearance.cameraZoom,
+        e.preventDefault();
+        const rect = renderer.domElement.getBoundingClientRect();
+        const safeW = Math.max(1, rect.width);
+        const safeH = Math.max(1, rect.height);
+        const cursorNdcX = ((e.clientX - rect.left) / safeW) * 2 - 1;
+        const cursorNdcY = -(((e.clientY - rect.top) / safeH) * 2 - 1);
+        const zoomState = computeCharacterCreatorCursorZoomState(
+          stateRef.current.customCharacterAppearance,
           e.deltaY,
-          e.deltaMode
+          e.deltaMode,
+          cursorNdcX,
+          cursorNdcY,
+          safeW / safeH,
+          camera.fov
         );
         const nextAppearance: CharacterAppearance = {
           ...stateRef.current.customCharacterAppearance,
-          cameraZoom: nextZoom
+          cameraZoom: zoomState.cameraZoom,
+          cameraTargetX: zoomState.cameraTargetX,
+          cameraTargetY: zoomState.cameraTargetY
         };
+        camera.position.set(zoomState.cameraTargetX, zoomState.cameraTargetY, zoomState.cameraZoom);
+        camera.lookAt(zoomState.cameraTargetX, zoomState.cameraTargetY, 0);
         stateRef.current.customCharacterAppearance = nextAppearance;
         stateRef.current.onChangeCharacterAppearance?.(nextAppearance);
       }
@@ -1550,7 +1571,7 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
-    renderer.domElement.addEventListener('wheel', onWheel, { passive: true });
+    renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
     renderer.domElement.addEventListener('contextmenu', onContextMenu);
 
     const resizeObserver = new ResizeObserver(() => {
@@ -1604,8 +1625,10 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
 
       if (st.mode === 'character') {
         const zoomDist = st.customCharacterAppearance.cameraZoom ?? 3.45;
-        camera.position.set(0, 1.22 * (zoomDist / 3.45), zoomDist);
-        camera.lookAt(0, 0.68, 0);
+        const targetX = st.customCharacterAppearance.cameraTargetX ?? 0;
+        const targetY = st.customCharacterAppearance.cameraTargetY ?? 0.68;
+        camera.position.set(targetX, targetY, zoomDist);
+        camera.lookAt(targetX, targetY, 0);
         if (!isPointerDown) {
           charPreviewRotation += dt * 0.35;
         }
