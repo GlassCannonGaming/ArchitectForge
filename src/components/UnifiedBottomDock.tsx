@@ -87,6 +87,11 @@ interface UnifiedBottomDockProps {
   onSelectBlueprint: (bp: AssetBlueprint | null) => void;
   onClearMouse: () => void;
   onUpdateAsset: (updated: PlacedAsset) => void;
+  onBatchModifySelected?: (patch: {
+    rotationDeltaY?: number;
+    rotatePivotMode?: 'auto' | 'group' | 'individual';
+  }) => void;
+  onSelectEntireRoom?: () => void;
   onDuplicateAsset: (asset: PlacedAsset) => void;
   onInteractAsset: (asset: PlacedAsset) => void;
   onSaveAssetToCatalog: (asset: PlacedAsset) => void;
@@ -193,6 +198,8 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
   onSelectBlueprint,
   onClearMouse,
   onUpdateAsset,
+  onBatchModifySelected,
+  onSelectEntireRoom,
   onDuplicateAsset,
   onInteractAsset,
   onSaveAssetToCatalog,
@@ -2981,16 +2988,32 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                   <div className="flex flex-wrap items-center gap-1 pt-0.5">
                     <button
                       type="button"
-                      onClick={() =>
-                        onUpdateAsset({
-                          ...selectedAsset,
-                          rotationY: selectedAsset.rotationY + Math.PI / 2
-                        })
-                      }
+                      data-testid="inspector-rotate-90-btn"
+                      onClick={() => {
+                        if (selectedCount > 1 && onBatchModifySelected) {
+                          onBatchModifySelected({ rotationDeltaY: Math.PI / 2 });
+                        } else {
+                          onUpdateAsset({
+                            ...selectedAsset,
+                            rotationY: selectedAsset.rotationY + Math.PI / 2
+                          });
+                        }
+                      }}
                       className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-300 rounded-full text-[11px] font-bold text-slate-700"
                     >
-                      ↻ Rotate 90°
+                      {selectedCount > 1 ? `↻ Rotate Selection 90° (${selectedCount})` : '↻ Rotate 90°'}
                     </button>
+                    {onSelectEntireRoom && (
+                      <button
+                        type="button"
+                        data-testid="inspector-select-entire-room-btn"
+                        onClick={onSelectEntireRoom}
+                        className="px-2.5 py-1 bg-sky-100 hover:bg-sky-200 border border-sky-300 rounded-full text-[11px] font-bold text-sky-900"
+                        title="Select the entire room with all walls and assets so pressing [R] rotates the room as a single selection"
+                      >
+                        🏠 Select Entire Room
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => onDuplicateAsset(selectedAsset)}

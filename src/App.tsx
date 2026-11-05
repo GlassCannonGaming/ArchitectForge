@@ -107,7 +107,9 @@ import {
   buildLightingMoodDirectiveFromPrompt,
   applyLightingMoodDirectiveToAssets,
   LightingMoodDirective,
-  buildFullLocalDeviceInstallerBundle
+  buildFullLocalDeviceInstallerBundle,
+  isEntireRoomSelection,
+  selectEntireRoomAssetIds
 } from './game/rules';
 import {
   INITIAL_PLACED_ASSETS,
@@ -1499,15 +1501,24 @@ export default function App() {
         if (targetIds.length > 0) {
           e.preventDefault();
           soundFX.playPlaceAsset();
-          recordUndoSnapshot(`Rotate ${targetIds.length} selected asset(s) 90°`);
+          const selectedObjs = assets.filter((a) => targetIds.includes(a.id));
+          const rotatedAsRoomGroup =
+            selectedObjs.length > 1 && isEntireRoomSelection(selectedObjs);
+          recordUndoSnapshot(
+            rotatedAsRoomGroup
+              ? `Rotate room selection (${targetIds.length} assets) 90°`
+              : `Rotate ${targetIds.length} selected asset(s) 90°`
+          );
           setAssets((prev) =>
             batchModifySelectedAssets(prev, targetIds, { rotationDeltaY: Math.PI / 2 })
           );
           const rotLabel = getPrimaryActionKeyLabel('rotate_asset', keybindings);
           setStatusBanner(
-            `Rotated ${targetIds.length} ${
-              targetIds.length === 1 ? 'object' : 'selected objects'
-            } by 90° [${rotLabel}].`
+            rotatedAsRoomGroup
+              ? `Rotated entire room selection (${targetIds.length} objects) by 90° as a single selection [${rotLabel}].`
+              : targetIds.length > 1
+              ? `Rotated each of ${targetIds.length} selected walls by 90° [${rotLabel}].`
+              : `Rotated 1 object by 90° [${rotLabel}].`
           );
           return;
         }
@@ -1821,6 +1832,7 @@ export default function App() {
       scaleMultiplier?: number;
       dimensions?: [number, number, number];
       rotationDeltaY?: number;
+      rotatePivotMode?: 'auto' | 'group' | 'individual';
       hingeSwingMode?: HingeSwingMode;
       isSecretPassage?: boolean;
       emissionIntensity?: number;
@@ -1852,6 +1864,22 @@ export default function App() {
     },
     [selectedAssetIds, selectedAssetId, recordUndoSnapshot]
   );
+
+  // Select all assets belonging to the active room at once so pressing [R] rotates the entire room with assets as a single selection
+  const handleSelectEntireRoom = useCallback(() => {
+    const roomIds = selectEntireRoomAssetIds(assets, currentFloor, selectedAssetId);
+    if (roomIds.length === 0) {
+      setStatusBanner('No room objects found on the current floor to select.');
+      return;
+    }
+    setActiveBlueprint(null);
+    setSelectedAssetIds(roomIds);
+    setSelectedAssetId(selectedAssetId && roomIds.includes(selectedAssetId) ? selectedAssetId : roomIds[0]);
+    const rotLabel = getPrimaryActionKeyLabel('rotate_asset', keybindings);
+    setStatusBanner(
+      `🏠 Selected entire room (${roomIds.length} objects including walls & assets) — Press [${rotLabel}] to rotate the entire room as a single selection!`
+    );
+  }, [assets, currentFloor, selectedAssetId, keybindings]);
 
   // AI Lighting Mood Auto-Director (gemini-3.1-flash-lite + 250ms smooth crossfade across all floor fixtures)
   const handleAutoDirectFloorLighting = useCallback(
@@ -3853,6 +3881,7 @@ export default function App() {
           screenPosition={selectedAgent ? selectedAgentScreenPos : selectedAssetScreenPos}
           onClose={() => setQuickEditWindowOpen(false)}
           onBatchModify={handleBatchModifySelected}
+          onSelectEntireRoom={handleSelectEntireRoom}
           onInteractKeyE={handleInteractWithAssetKeyE}
           onDuplicate={handleDuplicateAsset}
           onDeleteSelected={() => selectedAsset && handleDeleteAsset(selectedAsset.id)}
@@ -4524,6 +4553,8 @@ export default function App() {
           }}
           onClearMouse={handleClearMouse}
           onUpdateAsset={handleUpdateAsset}
+          onBatchModifySelected={handleBatchModifySelected}
+          onSelectEntireRoom={handleSelectEntireRoom}
           onDuplicateAsset={handleDuplicateAsset}
           onInteractAsset={handleInteractWithAssetKeyE}
           onSaveAssetToCatalog={handleSaveAssetToCatalog}

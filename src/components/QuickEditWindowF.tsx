@@ -37,6 +37,7 @@ interface QuickEditWindowFProps {
     scaleMultiplier?: number;
     dimensions?: [number, number, number];
     rotationDeltaY?: number;
+    rotatePivotMode?: 'auto' | 'group' | 'individual';
     hingeSwingMode?: HingeSwingMode;
     isSecretPassage?: boolean;
     emissionIntensity?: number;
@@ -45,6 +46,7 @@ interface QuickEditWindowFProps {
     lightingPreset?: string;
     customAnimationFps?: number | null;
   }) => void;
+  onSelectEntireRoom?: () => void;
   onInteractKeyE: (asset: PlacedAsset) => void;
   onDuplicate: (asset: PlacedAsset) => void;
   onDeleteSelected: () => void;
@@ -93,6 +95,7 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
   screenPosition,
   onClose,
   onBatchModify,
+  onSelectEntireRoom,
   onInteractKeyE,
   onDuplicate,
   onDeleteSelected,
@@ -1286,11 +1289,54 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
           <div className="grid grid-cols-2 gap-1.5 pt-0.5">
             <button
               type="button"
+              data-testid="quick-edit-rotate-90-btn"
               onClick={() => safeBatchModify({ rotationDeltaY: Math.PI / 2 })}
               className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-full text-[11px] font-bold text-slate-700"
+              title={
+                selectedCount > 1
+                  ? 'Rotate [R]: Rotates each wall for a wall row, or rotates the entire room as a single selection'
+                  : 'Rotate 90° [R]'
+              }
             >
-              ↻ Rotate 90°
+              {selectedCount > 1 ? '↻ Rotate 90° [R]' : '↻ Rotate 90°'}
             </button>
+            {onSelectEntireRoom && (
+              <button
+                type="button"
+                data-testid="quick-edit-select-entire-room-btn"
+                onClick={onSelectEntireRoom}
+                className="px-2.5 py-1 bg-sky-100 hover:bg-sky-200 rounded-full text-[11px] font-bold text-sky-900 truncate"
+                title="Select the entire room with all walls and assets so pressing [R] rotates the room as a single selection"
+              >
+                🏠 Select Entire Room
+              </button>
+            )}
+            {selectedCount > 1 && (
+              <>
+                <button
+                  type="button"
+                  data-testid="quick-edit-rotate-room-group-btn"
+                  onClick={() =>
+                    safeBatchModify({ rotationDeltaY: Math.PI / 2, rotatePivotMode: 'group' })
+                  }
+                  className="px-2 py-0.5 bg-indigo-100 hover:bg-indigo-200 rounded-full text-[10px] font-bold text-indigo-900 truncate"
+                  title="Force rotate all selected objects together around their shared center pivot"
+                >
+                  🏢 Rotate as Single Selection
+                </button>
+                <button
+                  type="button"
+                  data-testid="quick-edit-rotate-individual-btn"
+                  onClick={() =>
+                    safeBatchModify({ rotationDeltaY: Math.PI / 2, rotatePivotMode: 'individual' })
+                  }
+                  className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 rounded-full text-[10px] font-bold text-slate-800 truncate"
+                  title="Rotate each selected object individually in place"
+                >
+                  🧱 Rotate Each Individually
+                </button>
+              </>
+            )}
             <button
               type="button"
               data-testid="quick-edit-interact-e-btn"

@@ -4869,6 +4869,114 @@ test('Character Creator mouse cursor zoom target calculation and Full Local Devi
   assert.equal(installerBundle.installerUnixShContent.includes('ArchitectForge.desktop'), true);
 });
 
+test('Modular Rules Split & Multi-Asset Rotation: wall row rotates each individual wall while an entire room with assets rotates as a single selection around its group center', async () => {
+  const {
+    batchModifySelectedAssets,
+    computeSelectionGroupPivot,
+    isEntireRoomSelection,
+    selectEntireRoomAssetIds
+  } = await import('./rules/buildAndPlacement');
+  const barrel = await import('./rules');
 
+  assert.equal(typeof barrel.batchModifySelectedAssets, 'function');
+  assert.equal(typeof barrel.computeSelectionGroupPivot, 'function');
+  assert.equal(typeof barrel.isEntireRoomSelection, 'function');
+  assert.equal(typeof barrel.selectEntireRoomAssetIds, 'function');
 
+  // 1. A row of walls along X: pressing Rotate [R] rotates each individual wall in place
+  const wallRow = [
+    {
+      id: 'w1',
+      name: 'Wall 1',
+      category: 'wall' as const,
+      subType: 'interior_wall',
+      floor: 'floor1',
+      position: [-3, 1.5, 0] as [number, number, number],
+      rotationY: 0,
+      dimensions: [3, 3, 0.25] as [number, number, number],
+      color: '#8a8170',
+      textureId: 'plaster_cream' as const,
+      collidable: true
+    },
+    {
+      id: 'w2',
+      name: 'Wall 2',
+      category: 'wall' as const,
+      subType: 'interior_wall',
+      floor: 'floor1',
+      position: [0, 1.5, 0] as [number, number, number],
+      rotationY: 0,
+      dimensions: [3, 3, 0.25] as [number, number, number],
+      color: '#8a8170',
+      textureId: 'plaster_cream' as const,
+      collidable: true
+    },
+    {
+      id: 'w3',
+      name: 'Wall 3',
+      category: 'wall' as const,
+      subType: 'interior_wall',
+      floor: 'floor1',
+      position: [3, 1.5, 0] as [number, number, number],
+      rotationY: 0,
+      dimensions: [3, 3, 0.25] as [number, number, number],
+      color: '#8a8170',
+      textureId: 'plaster_cream' as const,
+      collidable: true
+    }
+  ];
 
+  assert.equal(isEntireRoomSelection(wallRow), false);
+  const rotatedWallRow = batchModifySelectedAssets(wallRow, ['w1', 'w2', 'w3'], {
+    rotationDeltaY: Math.PI / 2
+  });
+  // Each wall's X/Z position remains unchanged while its rotationY increments by 90°
+  assert.deepEqual(rotatedWallRow[0].position, [-3, 1.5, 0]);
+  assert.deepEqual(rotatedWallRow[1].position, [0, 1.5, 0]);
+  assert.deepEqual(rotatedWallRow[2].position, [3, 1.5, 0]);
+  assert.equal(Math.abs(rotatedWallRow[0].rotationY - Math.PI / 2) < 1e-6, true);
+  assert.equal(Math.abs(rotatedWallRow[1].rotationY - Math.PI / 2) < 1e-6, true);
+  assert.equal(Math.abs(rotatedWallRow[2].rotationY - Math.PI / 2) < 1e-6, true);
+
+  // 2. An entire room selected at once (walls + interior furniture/door): rotates as a single rigid selection around room center
+  const roomAssets = [
+    ...wallRow,
+    {
+      id: 'bed_1',
+      name: 'Suite Bed',
+      category: 'furniture' as const,
+      subType: 'bed',
+      floor: 'floor1',
+      position: [0, 0.45, 2] as [number, number, number],
+      rotationY: 0,
+      dimensions: [2, 0.9, 1.6] as [number, number, number],
+      color: '#4a181b',
+      textureId: 'velvet_crimson' as const,
+      collidable: true
+    }
+  ];
+
+  assert.equal(isEntireRoomSelection(roomAssets), true);
+  const pivot = computeSelectionGroupPivot(roomAssets);
+  assert.equal(pivot.pivotX, 0);
+  assert.equal(pivot.pivotZ, 1);
+
+  const rotatedRoom = batchModifySelectedAssets(
+    roomAssets,
+    ['w1', 'w2', 'w3', 'bed_1'],
+    { rotationDeltaY: Math.PI / 2 }
+  );
+
+  // Wall 1 at (-3, 0) relative to pivot (0, 1) has dx = -3, dz = -1 -> after +90° (cos=0, sin=1):
+  // nextX = 0 + (-3)*0 + (-1)*1 = -1; nextZ = 1 - (-3)*1 + (-1)*0 = 4
+  assert.equal(rotatedRoom[0].position[0], -1);
+  assert.equal(rotatedRoom[0].position[2], 4);
+  // Bed at (0, 2) relative to pivot (0, 1) has dx = 0, dz = 1 -> nextX = 1, nextZ = 1
+  assert.equal(rotatedRoom[3].position[0], 1);
+  assert.equal(rotatedRoom[3].position[2], 1);
+  assert.equal(Math.abs(rotatedRoom[3].rotationY - Math.PI / 2) < 1e-6, true);
+
+  // 3. selectEntireRoomAssetIds selects the entire room with assets
+  const selectedRoomIds = selectEntireRoomAssetIds(roomAssets, 'floor1', 'bed_1');
+  assert.equal(selectedRoomIds.length, 4);
+});
