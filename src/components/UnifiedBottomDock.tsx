@@ -44,7 +44,8 @@ import {
   generateTopDownRoomBlueprintPreview,
   isFloorSelectionWidgetVisible,
   formatFloorDiamondCode,
-  ArchitectCatalogSubTab
+  ArchitectCatalogSubTab,
+  getUpperAndLowerFloorVisibilityStatus
 } from '../game/rules';
 import { AssetBlueprint } from '../game/hotelData';
 import {
@@ -72,6 +73,9 @@ interface UnifiedBottomDockProps {
   onAddFloorLayer: () => void;
   onRemoveFloorLayer?: (floorId: FloorId) => void;
   onToggleFloorLayerVisibility: (floor: FloorId) => void;
+  onToggleUpperFloorsVisibility?: () => void;
+  onToggleLowerFloorsVisibility?: () => void;
+  onToggleAllUpperAndLowerFloorsVisibility?: () => void;
   onClearFloor: () => void;
   externalArchitectTab?: ArchitectCatalogSubTab | null;
   externalTabRequestNonce?: number;
@@ -183,6 +187,9 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
   onAddFloorLayer,
   onRemoveFloorLayer,
   onToggleFloorLayerVisibility,
+  onToggleUpperFloorsVisibility,
+  onToggleLowerFloorsVisibility,
+  onToggleAllUpperAndLowerFloorsVisibility,
   onClearFloor,
   externalArchitectTab,
   externalTabRequestNonce,
@@ -392,6 +399,7 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
 
   const sortedLayersTopDown = [...floorLayers].sort((a, b) => b.elevation - a.elevation);
   const currentLayerIndex = sortedLayersTopDown.findIndex((l) => l.id === currentFloor);
+  const upperLowerStatus = getUpperAndLowerFloorVisibilityStatus(floorLayers, currentFloor);
 
   const handleStepFloorUp = () => {
     if (currentLayerIndex > 0) {
@@ -558,6 +566,122 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                       </div>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* Upper & Lower Floors Visibility Toggle Controls (Build Mode Multi-Floor Reference) */}
+              <div
+                data-testid="build-upper-lower-floor-visibility-controls"
+                className="flex flex-col gap-1.5 bg-slate-900/95 border border-slate-700/90 rounded-2xl p-2 text-slate-100 shadow-inner"
+              >
+                <div className="flex items-center justify-between gap-1.5">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-sky-300">
+                    👁 Upper &amp; Lower Floor Visibility
+                  </span>
+                  {onToggleAllUpperAndLowerFloorsVisibility && upperLowerStatus.otherCount > 0 && (
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={upperLowerStatus.allOtherFloorsVisible}
+                      aria-label="Toggle Upper and Lower Floors Visibility"
+                      data-testid="toggle-all-other-floors-visibility-btn"
+                      onClick={onToggleAllUpperAndLowerFloorsVisibility}
+                      title="Toggle visibility of all upper and lower floors at once in Build Mode"
+                      className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold transition-all border ${
+                        upperLowerStatus.allOtherFloorsVisible
+                          ? 'bg-emerald-600 text-white border-emerald-400 shadow-2xs'
+                          : upperLowerStatus.anyOtherFloorsVisible
+                          ? 'bg-sky-900/80 text-sky-200 border-sky-500/70'
+                          : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-600'
+                      }`}
+                    >
+                      {upperLowerStatus.allOtherFloorsVisible
+                        ? 'Both: ON'
+                        : upperLowerStatus.anyOtherFloorsVisible
+                        ? `Partial (${upperLowerStatus.otherVisibleCount}/${upperLowerStatus.otherCount})`
+                        : 'Both: OFF'}
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={upperLowerStatus.allUpperVisible}
+                    aria-label="Toggle Upper Floors Visibility"
+                    data-testid="toggle-upper-floors-visibility-btn"
+                    disabled={upperLowerStatus.upperCount === 0}
+                    onClick={() => onToggleUpperFloorsVisibility?.()}
+                    title={
+                      upperLowerStatus.upperCount === 0
+                        ? 'No upper floors above the current active floor'
+                        : upperLowerStatus.allUpperVisible
+                        ? 'Turn OFF visibility of upper floors above active floor'
+                        : 'Turn ON visibility of upper floors above active floor'
+                    }
+                    className={`px-2 py-1 rounded-xl text-[10px] font-extrabold flex items-center justify-between gap-1 transition-all border ${
+                      upperLowerStatus.upperCount === 0
+                        ? 'bg-slate-800/40 text-slate-500 border-slate-800 cursor-not-allowed'
+                        : upperLowerStatus.allUpperVisible
+                        ? 'bg-sky-600 hover:bg-sky-500 text-white border-sky-300 shadow-xs'
+                        : upperLowerStatus.upperFloorsVisible
+                        ? 'bg-sky-950/90 hover:bg-sky-900 text-sky-200 border-sky-500/70'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                    }`}
+                  >
+                    <span className="whitespace-nowrap">
+                      ▲ Upper ({upperLowerStatus.upperVisibleCount}/{upperLowerStatus.upperCount})
+                    </span>
+                    <span className="font-mono text-[9px] px-1 py-0.5 rounded-full bg-black/25 shrink-0">
+                      {upperLowerStatus.upperCount === 0
+                        ? 'N/A'
+                        : upperLowerStatus.allUpperVisible
+                        ? 'ON'
+                        : upperLowerStatus.upperFloorsVisible
+                        ? 'PART'
+                        : 'OFF'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={upperLowerStatus.allLowerVisible}
+                    aria-label="Toggle Lower Floors Visibility"
+                    data-testid="toggle-lower-floors-visibility-btn"
+                    disabled={upperLowerStatus.lowerCount === 0}
+                    onClick={() => onToggleLowerFloorsVisibility?.()}
+                    title={
+                      upperLowerStatus.lowerCount === 0
+                        ? 'No lower floors below the current active floor'
+                        : upperLowerStatus.allLowerVisible
+                        ? 'Turn OFF visibility of lower floors below active floor'
+                        : 'Turn ON visibility of lower floors below active floor'
+                    }
+                    className={`px-2 py-1 rounded-xl text-[10px] font-extrabold flex items-center justify-between gap-1 transition-all border ${
+                      upperLowerStatus.lowerCount === 0
+                        ? 'bg-slate-800/40 text-slate-500 border-slate-800 cursor-not-allowed'
+                        : upperLowerStatus.allLowerVisible
+                        ? 'bg-amber-600 hover:bg-amber-500 text-white border-amber-300 shadow-xs'
+                        : upperLowerStatus.lowerFloorsVisible
+                        ? 'bg-amber-950/90 hover:bg-amber-900 text-amber-200 border-amber-500/70'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                    }`}
+                  >
+                    <span className="whitespace-nowrap">
+                      ▼ Lower ({upperLowerStatus.lowerVisibleCount}/{upperLowerStatus.lowerCount})
+                    </span>
+                    <span className="font-mono text-[9px] px-1 py-0.5 rounded-full bg-black/25 shrink-0">
+                      {upperLowerStatus.lowerCount === 0
+                        ? 'N/A'
+                        : upperLowerStatus.allLowerVisible
+                        ? 'ON'
+                        : upperLowerStatus.lowerFloorsVisible
+                        ? 'PART'
+                        : 'OFF'}
+                    </span>
+                  </button>
                 </div>
               </div>
 
@@ -965,6 +1089,42 @@ export const UnifiedBottomDock: React.FC<UnifiedBottomDockProps> = ({
                     }`}
                   >
                     Shell Walls
+                  </button>
+                </div>
+
+                {/* Quick Upper & Lower Floors Visibility Toggles in Build Mode Tools Window */}
+                <div className="grid grid-cols-2 gap-1 pt-0.5">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={upperLowerStatus.allUpperVisible}
+                    data-testid="tools-toggle-upper-floors-btn"
+                    disabled={upperLowerStatus.upperCount === 0}
+                    onClick={() => onToggleUpperFloorsVisibility?.()}
+                    title="Toggle 3D visibility of Upper Floors above active floor in Build Mode"
+                    className={`px-2 py-1 rounded-full text-[10px] font-bold truncate transition-all ${
+                      upperLowerStatus.allUpperVisible
+                        ? 'bg-[#0284c7] text-white shadow-2xs'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-40'
+                    }`}
+                  >
+                    ▲ Upper Floors: {upperLowerStatus.allUpperVisible ? 'ON' : 'OFF'}
+                  </button>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={upperLowerStatus.allLowerVisible}
+                    data-testid="tools-toggle-lower-floors-btn"
+                    disabled={upperLowerStatus.lowerCount === 0}
+                    onClick={() => onToggleLowerFloorsVisibility?.()}
+                    title="Toggle 3D visibility of Lower Floors below active floor in Build Mode"
+                    className={`px-2 py-1 rounded-full text-[10px] font-bold truncate transition-all ${
+                      upperLowerStatus.allLowerVisible
+                        ? 'bg-amber-600 text-white shadow-2xs'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-40'
+                    }`}
+                  >
+                    ▼ Lower Floors: {upperLowerStatus.allLowerVisible ? 'ON' : 'OFF'}
                   </button>
                 </div>
               </div>

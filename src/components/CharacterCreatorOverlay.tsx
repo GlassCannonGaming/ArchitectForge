@@ -36,7 +36,8 @@ import {
   CharacterVoiceProfile,
   inferVoiceProfileFromArchetypeAndName,
   computeCharacterCreatorWheelZoom,
-  computeCharacterCreatorCursorZoomState
+  computeCharacterCreatorCursorZoomState,
+  CHARACTER_CREATOR_FOCUS_PRESETS
 } from '../game/rules';
 import { StudioWindowFrame } from './StudioWindowFrame';
 
@@ -1052,11 +1053,11 @@ export const CharacterCreatorOverlay: React.FC<CharacterCreatorOverlayProps> = (
                   cameraTargetY: zoomState.cameraTargetY
                 });
               }}
-              className="pt-1 border-t border-slate-200/60 space-y-1"
+              className="pt-1 border-t border-slate-200/60 space-y-1.5"
             >
               <div className="flex items-center justify-between text-[11px]">
                 <span className="font-semibold text-slate-600">
-                  Camera Zoom (Scroll at Cursor)
+                  Camera Move &amp; Cursor Zoom
                 </span>
                 <span
                   data-testid="char-creator-zoom-readout"
@@ -1067,9 +1068,13 @@ export const CharacterCreatorOverlay: React.FC<CharacterCreatorOverlayProps> = (
                   {(appearance.cameraTargetY ?? 0.68).toFixed(2)})
                 </span>
               </div>
+              <div className="text-[9px] text-slate-500 font-medium">
+                Left-Drag / WASD: Pan Camera · Right/Mid-Drag: Rotate · Scroll / Double-Click: Zoom to Cursor Point
+              </div>
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
+                  data-testid="char-creator-zoom-in-btn"
                   onClick={() =>
                     onChangeAppearance({
                       ...appearance,
@@ -1084,9 +1089,9 @@ export const CharacterCreatorOverlay: React.FC<CharacterCreatorOverlayProps> = (
                 <input
                   type="range"
                   aria-label="Character Camera Zoom Distance"
-                  min={1.2}
+                  min={0.55}
                   max={7.0}
-                  step={0.1}
+                  step={0.05}
                   value={appearance.cameraZoom ?? 3.45}
                   onChange={(e) =>
                     onChangeAppearance({ ...appearance, cameraZoom: parseFloat(e.target.value) })
@@ -1095,6 +1100,7 @@ export const CharacterCreatorOverlay: React.FC<CharacterCreatorOverlayProps> = (
                 />
                 <button
                   type="button"
+                  data-testid="char-creator-zoom-out-btn"
                   onClick={() =>
                     onChangeAppearance({
                       ...appearance,
@@ -1108,6 +1114,7 @@ export const CharacterCreatorOverlay: React.FC<CharacterCreatorOverlayProps> = (
                 </button>
                 <button
                   type="button"
+                  data-testid="char-creator-zoom-reset-btn"
                   onClick={() =>
                     onChangeAppearance({
                       ...appearance,
@@ -1121,6 +1128,26 @@ export const CharacterCreatorOverlay: React.FC<CharacterCreatorOverlayProps> = (
                 >
                   Reset
                 </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-1">
+                {CHARACTER_CREATOR_FOCUS_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    data-testid={`char-focus-preset-${preset.id}`}
+                    onClick={() =>
+                      onChangeAppearance({
+                        ...appearance,
+                        cameraZoom: preset.cameraZoom,
+                        cameraTargetX: preset.cameraTargetX,
+                        cameraTargetY: preset.cameraTargetY
+                      })
+                    }
+                    className="px-2 py-0.5 rounded-full bg-slate-100 hover:bg-sky-100 border border-slate-300 text-[9px] font-bold text-slate-700 hover:text-sky-800 transition-colors"
+                  >
+                    {preset.label}
+                  </button>
+                ))}
               </div>
             </div>
           </div>

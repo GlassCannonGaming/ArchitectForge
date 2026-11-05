@@ -16,7 +16,8 @@ import {
   computeNaturalCharacterAnatomySpec,
   isInvisibleTriggerAsset,
   CompositeSubPart,
-  APARTMENT_BUILDING_CATALOG_BLUEPRINTS
+  APARTMENT_BUILDING_CATALOG_BLUEPRINTS,
+  computeCompositePartsVerticalShift
 } from './rules';
 
 const textureCache = new Map<string, { map: THREE.CanvasTexture; bumpMap: THREE.CanvasTexture }>();
@@ -617,6 +618,24 @@ export function buildAssetMeshGroup(
 
   // Custom AI / Meshy / Resolved Late-70s Composite Parts
   if (resolvedCompositeParts && resolvedCompositeParts.length > 0) {
+    const yShift = computeCompositePartsVerticalShift(resolvedCompositeParts, h);
+    const isCompositeDoor =
+      asset.category === 'door' || asset.category === 'secret_wall' || Boolean(asset.isSecretPassage);
+    let compositeHingePivot: THREE.Group | null = null;
+    let compositeHingeX = 0;
+
+    if (isCompositeDoor) {
+      const hingeState = computeAssetHingeAnimationState(asset, Date.now());
+      compositeHingeX = hingeState.hingeEdgeX;
+      compositeHingePivot = new THREE.Group();
+      compositeHingePivot.name = 'hingePivot';
+      compositeHingePivot.position.set(compositeHingeX + hingeState.slideOffsetX, 0, 0);
+      compositeHingePivot.rotation.y = hingeState.angleRad;
+      group.add(compositeHingePivot);
+      group.userData.hingePivot = compositeHingePivot;
+      group.userData.assetWidth = w;
+    }
+
     resolvedCompositeParts.forEach((part) => {
       let geo: THREE.BufferGeometry;
       const [sx, sy, sz] = part.size;
@@ -669,13 +688,24 @@ export function buildAssetMeshGroup(
         isTvScreen: isScreenPart && interactionState.interactionKind === 'tv_screen',
         baseEmissiveIntensity: partEmissiveIntensity
       };
-      mesh.position.set(part.offset[0], part.offset[1] - h / 2, part.offset[2]);
       if (part.rotation) {
         mesh.rotation.set(part.rotation[0], part.rotation[1], part.rotation[2]);
       }
       mesh.castShadow = true;
       mesh.receiveShadow = true;
-      group.add(mesh);
+
+      const isStationaryDoorFramePart =
+        partNameLower.includes('frame') ||
+        partNameLower.includes('jamb') ||
+        partNameLower.includes('track');
+
+      if (compositeHingePivot && !isStationaryDoorFramePart) {
+        mesh.position.set(part.offset[0] - compositeHingeX, part.offset[1] + yShift, part.offset[2]);
+        compositeHingePivot.add(mesh);
+      } else {
+        mesh.position.set(part.offset[0], part.offset[1] + yShift, part.offset[2]);
+        group.add(mesh);
+      }
     });
   } else if (isTrigger) {
     // Invisible Event Trigger Volume (Visible in Build Mode as translucent cyan wireframe + beacon, invisible in Walk Mode)

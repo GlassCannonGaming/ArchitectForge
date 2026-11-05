@@ -7,6 +7,10 @@ import {
   getFloorMeta,
   addNextFloorLayer,
   toggleFloorLayerVisibility,
+  getUpperAndLowerFloorVisibilityStatus,
+  toggleUpperFloorsVisibility,
+  toggleLowerFloorsVisibility,
+  toggleAllUpperAndLowerFloorsVisibility,
   PlacedAsset,
   TexturePresetId,
   HotelAgentProfile,
@@ -1334,6 +1338,51 @@ export default function App() {
     },
     [floorLayers]
   );
+
+  // Toggle visibility of all Upper Floors (above currentFloor) in Build Mode
+  const handleToggleUpperFloorsVisibility = useCallback(() => {
+    soundFX.playPlaceAsset();
+    const statusBefore = getUpperAndLowerFloorVisibilityStatus(floorLayers, currentFloor);
+    const nextLayers = toggleUpperFloorsVisibility(floorLayers, currentFloor);
+    const statusAfter = getUpperAndLowerFloorVisibilityStatus(nextLayers, currentFloor);
+    setFloorLayers(nextLayers);
+    setStatusBanner(
+      statusAfter.allUpperVisible
+        ? `▲ Upper Floors Visibility ON (${statusAfter.upperVisibleCount}/${statusAfter.upperCount} upper floors visible above ${getFloorMeta(currentFloor, floorLayers).shortCode}).`
+        : statusBefore.upperCount === 0
+        ? `No upper floors exist above ${getFloorMeta(currentFloor, floorLayers).shortCode}.`
+        : `▲ Upper Floors Visibility OFF above ${getFloorMeta(currentFloor, floorLayers).shortCode}.`
+    );
+  }, [floorLayers, currentFloor]);
+
+  // Toggle visibility of all Lower Floors (below currentFloor) in Build Mode
+  const handleToggleLowerFloorsVisibility = useCallback(() => {
+    soundFX.playPlaceAsset();
+    const statusBefore = getUpperAndLowerFloorVisibilityStatus(floorLayers, currentFloor);
+    const nextLayers = toggleLowerFloorsVisibility(floorLayers, currentFloor);
+    const statusAfter = getUpperAndLowerFloorVisibilityStatus(nextLayers, currentFloor);
+    setFloorLayers(nextLayers);
+    setStatusBanner(
+      statusAfter.allLowerVisible
+        ? `▼ Lower Floors Visibility ON (${statusAfter.lowerVisibleCount}/${statusAfter.lowerCount} lower floors visible below ${getFloorMeta(currentFloor, floorLayers).shortCode}).`
+        : statusBefore.lowerCount === 0
+        ? `No lower floors exist below ${getFloorMeta(currentFloor, floorLayers).shortCode}.`
+        : `▼ Lower Floors Visibility OFF below ${getFloorMeta(currentFloor, floorLayers).shortCode}.`
+    );
+  }, [floorLayers, currentFloor]);
+
+  // Master toggle for turning ON or OFF both Upper and Lower Floors simultaneously in Build Mode
+  const handleToggleAllUpperAndLowerFloorsVisibility = useCallback(() => {
+    soundFX.playPlaceAsset();
+    const nextLayers = toggleAllUpperAndLowerFloorsVisibility(floorLayers, currentFloor);
+    const statusAfter = getUpperAndLowerFloorVisibilityStatus(nextLayers, currentFloor);
+    setFloorLayers(nextLayers);
+    setStatusBanner(
+      statusAfter.allOtherFloorsVisible
+        ? `👁 Upper & Lower Floors Visibility ON (${statusAfter.otherVisibleCount} reference floors shown in Build Mode).`
+        : `👁 Upper & Lower Floors Visibility OFF (showing active floor ${getFloorMeta(currentFloor, floorLayers).shortCode} only).`
+    );
+  }, [floorLayers, currentFloor]);
 
   // Global Studio Keyboard Shortcuts (ESC clears mouse, F opens Quick Edit window, R rotates 90°, Delete removes selected, Ctrl+Z / Ctrl+Y undo/redo, 1/2/3 switch views)
   useEffect(() => {
@@ -3783,6 +3832,7 @@ export default function App() {
   const selectedAsset = assets.find((a) => a.id === selectedAssetId) || null;
   const selectedAgent = agents.find((ag) => ag.id === selectedAgentId) || null;
   const floorAssets = assets.filter((a) => a.floor === currentFloor);
+  const upperLowerFloorVisStatus = getUpperAndLowerFloorVisibilityStatus(floorLayers, currentFloor);
   const lastUndoLabel = undoStack.length > 0 ? undoStack[undoStack.length - 1].actionLabel : null;
   const activeSelectionCount =
     selectedAssetIds.length > 0 ? selectedAssetIds.length : selectedAsset ? 1 : 0;
@@ -4220,6 +4270,64 @@ export default function App() {
               );
             })}
 
+            {/* Build Mode Upper & Lower Floor Visibility Quick Toggles */}
+            {mode === 'architect' && (
+              <>
+                <span className="h-4 w-px bg-slate-700 mx-0.5" />
+                <div
+                  data-testid="top-build-floor-visibility-group"
+                  className="flex items-center gap-1"
+                >
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={upperLowerFloorVisStatus.allUpperVisible}
+                    data-testid="top-toggle-upper-floors-btn"
+                    disabled={upperLowerFloorVisStatus.upperCount === 0}
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      handleToggleUpperFloorsVisibility();
+                    }}
+                    title="Toggle visibility of Upper Floors above active floor in Build Mode"
+                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold transition-all whitespace-nowrap border ${
+                      upperLowerFloorVisStatus.upperCount === 0
+                        ? 'bg-slate-800/40 text-slate-500 border-slate-800 cursor-not-allowed'
+                        : upperLowerFloorVisStatus.allUpperVisible
+                        ? 'bg-sky-600 text-white border-sky-400 shadow-2xs'
+                        : upperLowerFloorVisStatus.upperFloorsVisible
+                        ? 'bg-sky-950/90 text-sky-200 border-sky-500/70'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                    }`}
+                  >
+                    ▲ Upper Floors: {upperLowerFloorVisStatus.allUpperVisible ? 'ON' : 'OFF'}
+                  </button>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={upperLowerFloorVisStatus.allLowerVisible}
+                    data-testid="top-toggle-lower-floors-btn"
+                    disabled={upperLowerFloorVisStatus.lowerCount === 0}
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      handleToggleLowerFloorsVisibility();
+                    }}
+                    title="Toggle visibility of Lower Floors below active floor in Build Mode"
+                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold transition-all whitespace-nowrap border ${
+                      upperLowerFloorVisStatus.lowerCount === 0
+                        ? 'bg-slate-800/40 text-slate-500 border-slate-800 cursor-not-allowed'
+                        : upperLowerFloorVisStatus.allLowerVisible
+                        ? 'bg-amber-600 text-white border-amber-400 shadow-2xs'
+                        : upperLowerFloorVisStatus.lowerFloorsVisible
+                        ? 'bg-amber-950/90 text-amber-200 border-amber-500/70'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                    }`}
+                  >
+                    ▼ Lower Floors: {upperLowerFloorVisStatus.allLowerVisible ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+              </>
+            )}
+
             {/* Divider + Studio Window Drawer buttons so Tools / Catalog / Inspector remain one-click accessible */}
             <span className="h-4 w-px bg-slate-700 mx-0.5" />
             <div
@@ -4502,6 +4610,9 @@ export default function App() {
           onAddFloorLayer={handleAddFloorLayer}
           onRemoveFloorLayer={handleRemoveFloorLayer}
           onToggleFloorLayerVisibility={handleToggleFloorLayerVisibility}
+          onToggleUpperFloorsVisibility={handleToggleUpperFloorsVisibility}
+          onToggleLowerFloorsVisibility={handleToggleLowerFloorsVisibility}
+          onToggleAllUpperAndLowerFloorsVisibility={handleToggleAllUpperAndLowerFloorsVisibility}
           onClearFloor={handleClearCurrentFloor}
           externalArchitectTab={externalArchitectTab}
           externalTabRequestNonce={externalTabRequestNonce}

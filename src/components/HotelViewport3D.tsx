@@ -45,11 +45,14 @@ import {
   isInvisibleTriggerAsset,
   computeCharacterCreatorWheelZoom,
   computeCharacterCreatorCursorZoomState,
+  computeCharacterCreatorCameraPan,
+  computeCharacterCreatorKeyboardPanStep,
   selectCulledPointLightIds,
   PointLightCullCandidate,
   MAX_ACTIVE_DYNAMIC_POINT_LIGHTS,
   computeLightingCrossfadeState,
-  LIGHTING_CROSSFADE_DURATION_MS
+  LIGHTING_CROSSFADE_DURATION_MS,
+  shouldRenderOtherFloorInBuildMode
 } from '../game/rules';
 import {
   buildAssetMeshGroup,
@@ -662,16 +665,37 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
       const activeLayer = st.floorLayers.find((l) => l.id === st.currentFloor);
       const activeElevation = activeLayer ? activeLayer.elevation : 0;
 
-      // 1. Render other visible Floor Layers (Onion-Skin / Multi-Layer Stack like Photoshop)
+      // 1. Render other visible Floor Layers (Upper & Lower Floors in Build Mode)
       st.floorLayers.forEach((layer) => {
-        if (layer.id === st.currentFloor || !layer.visible) return;
+        if (!shouldRenderOtherFloorInBuildMode(layer, st.currentFloor, st.mode)) return;
         const elevOffset = (layer.elevation - activeElevation) * 3.0;
+        const isUpperFloor = layer.elevation > activeElevation;
         const layerAssets = st.assets.filter((a) => a.floor === layer.id);
 
-        const refGrid = new THREE.GridHelper(32, 32, 0x94a3b8, 0xe2e8f0);
+        const refGrid = new THREE.GridHelper(
+          32,
+          32,
+          isUpperFloor ? 0x0284c7 : 0xd97706,
+          isUpperFloor ? 0xbae6fd : 0xfde68a
+        );
         refGrid.position.y = elevOffset;
         referenceLayersGroup.add(refGrid);
 
+        const slabPlane = new THREE.Mesh(
+          new THREE.PlaneGeometry(32, 32),
+          new THREE.MeshBasicMaterial({
+            color: isUpperFloor ? 0x38bdf8 : 0xf59e0b,
+            transparent: true,
+            opacity: 0.08,
+            side: THREE.DoubleSide,
+            depthWrite: false
+          })
+        );
+        slabPlane.rotation.x = -Math.PI / 2;
+        slabPlane.position.y = elevOffset - 0.01;
+        referenceLayersGroup.add(slabPlane);
+
+        const layerOpacity = Math.max(0.25, Math.min(0.85, layer.opacity || 0.42));
         layerAssets.forEach((asset) => {
           const meshGroup = buildAssetMeshGroup(asset, maxAnisotropy, false);
           meshGroup.position.y += elevOffset;
@@ -681,7 +705,7 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
               if (m.material && !Array.isArray(m.material)) {
                 const clonedMat = m.material.clone() as THREE.MeshStandardMaterial;
                 clonedMat.transparent = true;
-                clonedMat.opacity = 0.38;
+                clonedMat.opacity = layerOpacity;
                 m.material = clonedMat;
               }
             }
@@ -854,6 +878,8 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
     };
 
     let charPreviewRotation = 0;
+    let charCameraPitch = 0;
+    let charAutoRotatePaused = false;
     let isolatedRotation = 0.45;
 
     const clearInputs = () => {
@@ -1229,6 +1255,10 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
             return;
           }
         }
+      } else if (st.mode === 'character') {
+        isPanningCamera = true;
+        charAutoRotatePaused = true;
+        renderer.domElement.style.cursor = 'grabbing';
       }
     };
 
@@ -1250,7 +1280,9 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
             Math.min(0.55, playerPoseRef.current.pitch - dy * 0.004)
           );
         } else if (st.mode === 'character') {
+          charAutoRotatePaused = true;
           charPreviewRotation += dx * 0.012;
+          charCameraPitch = Math.max(-0.55, Math.min(0.55, charCameraPitch + dy * 0.006));
         }
         lastPointerX = e.clientX;
         lastPointerY = e.clientY;
@@ -1406,8 +1438,33 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
         }
       } else if (st.mode === 'character' && isPointerDown) {
         const dx = e.clientX - lastPointerX;
-        charPreviewRotation += dx * 0.012;
+        const dy = e.clientY - lastPointerY;
+        charAutoRotatePaused = true;
+        if (e.altKey || e.shiftKey) {
+          charPreviewRotation += dx * 0.012;
+          charCameraPitch = Math.max(-0.55, Math.min(0.55, charCameraPitch + dy * 0.006));
+        } else {
+          const rect = renderer.domElement.getBoundingClientRect();
+          const panned = computeCharacterCreatorCameraPan(
+            st.customCharacterAppearance,
+            dx,
+            dy,
+            Math.max(1, rect.height),
+            camera.fov
+          );
+          const nextAppearance: CharacterAppearance = {
+            ...st.customCharacterAppearance,
+            cameraTargetX: panned.cameraTargetX,
+            cameraTargetY: panned.cameraTargetY
+          };
+          const zoomDist = nextAppearance.cameraZoom ?? 3.45;
+          camera.position.set(panned.cameraTargetX, panned.cameraTargetY + charCameraPitch * 0.35, zoomDist);
+          camera.lookAt(panned.cameraTargetX, panned.cameraTargetY, 0);
+          st.customCharacterAppearance = nextAppearance;
+          st.onChangeCharacterAppearance?.(nextAppearance);
+        }
         lastPointerX = e.clientX;
+        lastPointerY = e.clientY;
       } else if (st.mode === 'walkthrough') {
         if (isPointerDown) {
           const dx = e.clientX - lastPointerX;
@@ -1534,6 +1591,7 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
         architectOrbit.radius = Math.max(4, Math.min(95, architectOrbit.radius + e.deltaY * 0.015));
       } else if (stateRef.current.mode === 'character') {
         e.preventDefault();
+        charAutoRotatePaused = true;
         const rect = renderer.domElement.getBoundingClientRect();
         const safeW = Math.max(1, rect.width);
         const safeH = Math.max(1, rect.height);
@@ -1554,11 +1612,49 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
           cameraTargetX: zoomState.cameraTargetX,
           cameraTargetY: zoomState.cameraTargetY
         };
-        camera.position.set(zoomState.cameraTargetX, zoomState.cameraTargetY, zoomState.cameraZoom);
+        camera.position.set(
+          zoomState.cameraTargetX,
+          zoomState.cameraTargetY + charCameraPitch * 0.35,
+          zoomState.cameraZoom
+        );
         camera.lookAt(zoomState.cameraTargetX, zoomState.cameraTargetY, 0);
         stateRef.current.customCharacterAppearance = nextAppearance;
         stateRef.current.onChangeCharacterAppearance?.(nextAppearance);
       }
+    };
+
+    const onDoubleClick = (e: MouseEvent) => {
+      if (stateRef.current.mode !== 'character') return;
+      e.preventDefault();
+      charAutoRotatePaused = true;
+      const rect = renderer.domElement.getBoundingClientRect();
+      const safeW = Math.max(1, rect.width);
+      const safeH = Math.max(1, rect.height);
+      const cursorNdcX = ((e.clientX - rect.left) / safeW) * 2 - 1;
+      const cursorNdcY = -(((e.clientY - rect.top) / safeH) * 2 - 1);
+      const zoomState = computeCharacterCreatorCursorZoomState(
+        stateRef.current.customCharacterAppearance,
+        -240,
+        0,
+        cursorNdcX,
+        cursorNdcY,
+        safeW / safeH,
+        camera.fov
+      );
+      const nextAppearance: CharacterAppearance = {
+        ...stateRef.current.customCharacterAppearance,
+        cameraZoom: zoomState.cameraZoom,
+        cameraTargetX: zoomState.cursorWorldX,
+        cameraTargetY: zoomState.cursorWorldY
+      };
+      camera.position.set(
+        nextAppearance.cameraTargetX!,
+        nextAppearance.cameraTargetY! + charCameraPitch * 0.35,
+        nextAppearance.cameraZoom!
+      );
+      camera.lookAt(nextAppearance.cameraTargetX!, nextAppearance.cameraTargetY!, 0);
+      stateRef.current.customCharacterAppearance = nextAppearance;
+      stateRef.current.onChangeCharacterAppearance?.(nextAppearance);
     };
 
     const onContextMenu = (e: MouseEvent) => {
@@ -1572,6 +1668,7 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
     renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
+    renderer.domElement.addEventListener('dblclick', onDoubleClick);
     renderer.domElement.addEventListener('contextmenu', onContextMenu);
 
     const resizeObserver = new ResizeObserver(() => {
@@ -1624,12 +1721,29 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
       const st = stateRef.current;
 
       if (st.mode === 'character') {
+        const kb = st.keybindings || DEFAULT_KEYBINDINGS;
+        const keyPan = computeCharacterCreatorKeyboardPanStep({
+          current: st.customCharacterAppearance,
+          dt,
+          keysHeld,
+          bindings: kb
+        });
+        if (keyPan.moved) {
+          charAutoRotatePaused = true;
+          const nextAppearance: CharacterAppearance = {
+            ...st.customCharacterAppearance,
+            cameraTargetX: keyPan.cameraTargetX,
+            cameraTargetY: keyPan.cameraTargetY
+          };
+          st.customCharacterAppearance = nextAppearance;
+          st.onChangeCharacterAppearance?.(nextAppearance);
+        }
         const zoomDist = st.customCharacterAppearance.cameraZoom ?? 3.45;
         const targetX = st.customCharacterAppearance.cameraTargetX ?? 0;
         const targetY = st.customCharacterAppearance.cameraTargetY ?? 0.68;
-        camera.position.set(targetX, targetY, zoomDist);
+        camera.position.set(targetX, targetY + charCameraPitch * 0.35, zoomDist);
         camera.lookAt(targetX, targetY, 0);
-        if (!isPointerDown) {
+        if (!isPointerDown && !charAutoRotatePaused && zoomDist >= 3.2) {
           charPreviewRotation += dt * 0.35;
         }
         characterStudioGroup.position.set(0, 0.32, 0);
@@ -2299,6 +2413,7 @@ export const HotelViewport3D: React.FC<HotelViewport3DProps> = ({
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
       renderer.domElement.removeEventListener('wheel', onWheel);
+      renderer.domElement.removeEventListener('dblclick', onDoubleClick);
       renderer.domElement.removeEventListener('contextmenu', onContextMenu);
       renderer.dispose();
     };

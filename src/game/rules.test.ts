@@ -4980,3 +4980,263 @@ test('Modular Rules Split & Multi-Asset Rotation: wall row rotates each individu
   const selectedRoomIds = selectEntireRoomAssetIds(roomAssets, 'floor1', 'bed_1');
   assert.equal(selectedRoomIds.length, 4);
 });
+
+test('Char. Build camera movement (mouse drag pan, WASD keyboard pan, focus presets) and close-up mouse cursor point zoom', async () => {
+  const {
+    computeCharacterCreatorCameraPan,
+    computeCharacterCreatorKeyboardPanStep,
+    computeCharacterCreatorCursorZoomState,
+    CHARACTER_CREATOR_FOCUS_PRESETS
+  } = await import('./rules');
+
+  // 1. Mouse drag panning moves cameraTargetX and cameraTargetY proportionally to zoom & viewport height
+  const dragPanned = computeCharacterCreatorCameraPan(
+    { cameraZoom: 3.45, cameraTargetX: 0, cameraTargetY: 0.68 },
+    100, // drag right -> cameraTargetX shifts left
+    -80, // drag up -> cameraTargetY shifts down
+    900,
+    55
+  );
+  assert.equal(dragPanned.cameraTargetX < 0, true);
+  assert.equal(dragPanned.cameraTargetY < 0.68, true);
+
+  // 2. Keyboard WASD / Arrow keys pan cameraTargetX and cameraTargetY smoothly
+  const keyPanned = computeCharacterCreatorKeyboardPanStep({
+    current: { cameraZoom: 2.0, cameraTargetX: 0, cameraTargetY: 0.68 },
+    dt: 0.1,
+    keysHeld: new Set(['KeyW', 'KeyD'])
+  });
+  assert.equal(keyPanned.moved, true);
+  assert.equal(keyPanned.cameraTargetX > 0, true);
+  assert.equal(keyPanned.cameraTargetY > 0.68, true);
+
+  // 3. Close-up cursor zoom allows zooming down to 0.55m while keeping the cursor world point pinned
+  let zoomState = { cameraZoom: 1.4, cameraTargetX: 0, cameraTargetY: 1.45 };
+  for (let i = 0; i < 6; i++) {
+    const next = computeCharacterCreatorCursorZoomState(zoomState, -250, 0, 0.35, 0.25, 1.6, 55);
+    zoomState = {
+      cameraZoom: next.cameraZoom,
+      cameraTargetX: next.cameraTargetX,
+      cameraTargetY: next.cameraTargetY
+    };
+  }
+  assert.equal(zoomState.cameraZoom, 0.55);
+  assert.equal(CHARACTER_CREATOR_FOCUS_PRESETS.length, 5);
+  assert.equal(CHARACTER_CREATOR_FOCUS_PRESETS[1].id, 'face_head');
+});
+
+test('Build Mode upper and lower floor visibility status and toggles', async () => {
+  const {
+    INITIAL_FLOOR_LAYERS,
+    getUpperAndLowerFloorVisibilityStatus,
+    toggleUpperFloorsVisibility,
+    toggleLowerFloorsVisibility,
+    toggleAllUpperAndLowerFloorsVisibility,
+    shouldRenderOtherFloorInBuildMode
+  } = await import('./rules');
+
+  // 1. Starting on 'lobby' (elevation 0): 3 upper floors (1F, 2F, 3F) and 1 lower floor (B1), all initially hidden
+  const initStatus = getUpperAndLowerFloorVisibilityStatus(INITIAL_FLOOR_LAYERS, 'lobby');
+  assert.equal(initStatus.upperCount, 3);
+  assert.equal(initStatus.upperVisibleCount, 0);
+  assert.equal(initStatus.allUpperVisible, false);
+  assert.equal(initStatus.lowerCount, 1);
+  assert.equal(initStatus.lowerVisibleCount, 0);
+  assert.equal(initStatus.allLowerVisible, false);
+
+  // 2. Toggle Upper Floors ON -> all 3 upper floors become visible, lower floor remains hidden
+  const withUpperOn = toggleUpperFloorsVisibility(INITIAL_FLOOR_LAYERS, 'lobby');
+  const statusUpperOn = getUpperAndLowerFloorVisibilityStatus(withUpperOn, 'lobby');
+  assert.equal(statusUpperOn.allUpperVisible, true);
+  assert.equal(statusUpperOn.upperVisibleCount, 3);
+  assert.equal(statusUpperOn.allLowerVisible, false);
+
+  // 3. Toggle Lower Floors ON -> lower floor (basement) also becomes visible
+  const withBothOn = toggleLowerFloorsVisibility(withUpperOn, 'lobby');
+  const statusBothOn = getUpperAndLowerFloorVisibilityStatus(withBothOn, 'lobby');
+  assert.equal(statusBothOn.allUpperVisible, true);
+  assert.equal(statusBothOn.allLowerVisible, true);
+  assert.equal(statusBothOn.allOtherFloorsVisible, true);
+
+  // 4. Master toggle turns both Upper and Lower Floors OFF
+  const withBothOff = toggleAllUpperAndLowerFloorsVisibility(withBothOn, 'lobby');
+  const statusBothOff = getUpperAndLowerFloorVisibilityStatus(withBothOff, 'lobby');
+  assert.equal(statusBothOff.allUpperVisible, false);
+  assert.equal(statusBothOff.allLowerVisible, false);
+  assert.equal(statusBothOff.anyOtherFloorsVisible, false);
+
+  // 5. shouldRenderOtherFloorInBuildMode renders visible non-active floors in Build Mode ('architect') only
+  const f1Visible = withUpperOn.find((l) => l.id === 'floor1')!;
+  assert.equal(shouldRenderOtherFloorInBuildMode(f1Visible, 'lobby', 'architect'), true);
+  assert.equal(shouldRenderOtherFloorInBuildMode(f1Visible, 'floor1', 'architect'), false);
+  assert.equal(shouldRenderOtherFloorInBuildMode(f1Visible, 'lobby', 'walkthrough'), false);
+
+  // 6. Verify direct single-system module imports from src/game/rules/*
+  const floorsMod = await import('./rules/floorsAndStatsSystem');
+  const placementMod = await import('./rules/buildPlacementAndRotationSystem');
+  const charCamMod = await import('./rules/characterCameraAndPreviewSystem');
+  const lightingUiMod = await import('./rules/lightingDirectorAndUiLayoutSystem');
+  assert.equal(typeof floorsMod.toggleUpperFloorsVisibility, 'function');
+  assert.equal(typeof placementMod.batchModifySelectedAssets, 'function');
+  assert.equal(typeof charCamMod.computeCharacterCreatorCursorZoomState, 'function');
+  assert.equal(typeof lightingUiMod.buildLightingMoodDirectiveFromPrompt, 'function');
+});
+
+test('All 280 catalog assets sit flush on the floor (worldMinY = 0), elevator sliding doors snap into portal walls and slide open, and doors/windows snap inline to wall ends', async () => {
+  const {
+    computeCompositePartHalfHeight,
+    computeCompositePartsVerticalShift,
+    resolvePlacedAssetElevationY,
+    computeSurfaceSnappedPosition,
+    computeBuildPlacementPosition,
+    snapAssetToClosestSurfaceNow,
+    moveMultipleAssetsByDelta,
+    computeAssetHingeAnimationState
+  } = await import('./rules');
+  const { ASSET_CATALOG } = await import('./hotelData');
+  const { resolveCatalogCompositeParts } = await import('./procedural3D');
+
+  assert.equal(ASSET_CATALOG.length >= 280, true);
+
+  // 1. Audit EVERY single asset in ASSET_CATALOG (all 280 blueprints) to confirm its lowest composite point
+  // sits flush on the floor (worldMinY === 0 within 0.001m) when spawned at y = h / 2.
+  for (const bp of ASSET_CATALOG) {
+    const h = bp.defaultDimensions[1];
+    const parts = resolveCatalogCompositeParts(bp.subType, bp.name, bp.compositeParts);
+    if (parts && parts.length > 0) {
+      const yShift = computeCompositePartsVerticalShift(parts, h);
+      let worldMinY = Infinity;
+      for (const p of parts) {
+        const partCenterLocalY = p.offset[1] + yShift;
+        const partBottomLocalY = partCenterLocalY - computeCompositePartHalfHeight(p);
+        const partBottomWorldY = h / 2 + partBottomLocalY;
+        if (partBottomWorldY < worldMinY) {
+          worldMinY = partBottomWorldY;
+        }
+      }
+      assert.equal(
+        Math.abs(worldMinY) <= 0.002,
+        true,
+        `Catalog asset ${bp.subType} (${bp.name}) spawned with worldMinY=${worldMinY} instead of 0.000m flush on floor`
+      );
+    }
+  }
+
+  // 2. Specifically verify the Elevator Sliding Doors that previously spawned halfway through the floor (-1.19m)
+  const elevCabDoorsBp = ASSET_CATALOG.find((b) => b.subType === 'apt_elevator_cab_sliding_doors')!;
+  assert.equal(Boolean(elevCabDoorsBp), true);
+  const elevParts = resolveCatalogCompositeParts(
+    elevCabDoorsBp.subType,
+    elevCabDoorsBp.name,
+    elevCabDoorsBp.compositeParts
+  )!;
+  const elevYShift = computeCompositePartsVerticalShift(elevParts, elevCabDoorsBp.defaultDimensions[1]);
+  // Previously yShift was -1.25 (-h/2), which pushed center-origin parts down to -1.19m; now yShift is ~ -0.06m so worldMinY === 0
+  assert.equal(elevYShift > -0.2, true);
+
+  // 3. Elevator sliding doors default to 'pocket_slide' animation mode when opened
+  const slidingAnim = computeAssetHingeAnimationState(
+    {
+      subType: 'apt_elevator_cab_sliding_doors',
+      dimensions: [1.4, 2.5, 0.14],
+      isOpen: true
+    },
+    Date.now()
+  );
+  assert.equal(slidingAnim.swingMode, 'pocket_slide');
+  assert.equal(slidingAnim.slideOffsetX > 0.5, true);
+  assert.equal(slidingAnim.angleRad, 0);
+
+  // 4. Elevator sliding doors snap directly into the central opening of an Elevator Portal Wall
+  const portalWall = {
+    id: 'portal_wall_1',
+    name: 'Elevator Cab Portal Wall',
+    category: 'wall' as const,
+    subType: 'apt_elevator_cab_portal_wall',
+    floor: 'lobby' as const,
+    position: [4.0, 1.4, -2.0] as [number, number, number],
+    rotationY: 0,
+    dimensions: [2.4, 2.8, 0.25] as [number, number, number],
+    color: '#6b4c35',
+    textureId: 'aged_brass' as const,
+    collidable: true
+  };
+  const placementSnap = computeBuildPlacementPosition({
+    rawX: 4.15,
+    rawZ: -1.85,
+    dimensions: [1.4, 2.5, 0.14],
+    rotationY: 0,
+    category: 'door',
+    subType: 'apt_elevator_cab_sliding_doors',
+    floor: 'lobby',
+    floorAssets: [portalWall],
+    gridStep: 0.5,
+    snapToAssetEnabled: true,
+    snapThreshold: 1.85
+  });
+  assert.equal(placementSnap.snappedToId, 'portal_wall_1');
+  assert.equal(placementSnap.x, 4.0);
+  assert.equal(placementSnap.z, -2.0);
+  assert.equal(placementSnap.rotationY, 0);
+
+  // 5. Snapping a door or window_wall to the east/west end cap of an east-west wall keeps it inline (rotationY = 0)
+  const eastWestWall = {
+    id: 'wall_ew_1',
+    name: 'Corridor Wall',
+    category: 'wall' as const,
+    subType: 'plaster_wall',
+    floor: 'lobby' as const,
+    position: [0, 1.7, 0] as [number, number, number],
+    rotationY: 0,
+    dimensions: [4.0, 3.4, 0.35] as [number, number, number],
+    color: '#8a8170',
+    textureId: 'aged_brass' as const,
+    collidable: true
+  };
+  const movingDoor = {
+    id: 'door_inline_1',
+    name: 'Tenement Door',
+    category: 'door' as const,
+    subType: 'apt_interior_tenement_door',
+    floor: 'lobby' as const,
+    position: [2.5, 1.1, 0] as [number, number, number],
+    rotationY: 0,
+    dimensions: [1.0, 2.2, 0.15] as [number, number, number],
+    color: '#5c4033',
+    textureId: 'aged_brass' as const,
+    collidable: true
+  };
+  const inlineSnap = computeSurfaceSnappedPosition(movingDoor, 2.55, 0.02, [eastWestWall], 2.2, 0.5);
+  assert.equal(inlineSnap.snappedToId, 'wall_ew_1');
+  assert.equal(inlineSnap.snappedFace, 'east');
+  assert.equal(inlineSnap.rotationY, 0); // Must stay inline (0 rad), NOT twist to Math.PI / 2!
+  assert.equal(inlineSnap.x, 2.5); // 2.0 (half wall width) + 0.5 (half door width)
+  assert.equal(inlineSnap.z, 0);
+
+  // 6. Elevated assets (like Elevator Ceiling with Escape Hatch at y = 2.7m) preserve their elevation when moved or snapped
+  assert.equal(resolvePlacedAssetElevationY(0.2, 2.7), 2.7);
+  assert.equal(resolvePlacedAssetElevationY(2.5, 1.25), 1.25);
+  const ceilingAsset = {
+    id: 'elev_ceil_1',
+    name: 'Elevator Ceiling with Escape Hatch',
+    category: 'furniture' as const,
+    subType: 'apt_elevator_ceiling_access_panel',
+    floor: 'lobby' as const,
+    position: [4.0, 2.7, -2.0] as [number, number, number],
+    rotationY: 0,
+    dimensions: [2.4, 0.2, 2.2] as [number, number, number],
+    color: '#b5a642',
+    textureId: 'aged_brass' as const,
+    collidable: false
+  };
+  const movedAssets = moveMultipleAssetsByDelta([ceilingAsset], ['elev_ceil_1'], 'elev_ceil_1', 5.0, -2.0, 31.5, {
+    gridStep: 0.5
+  });
+  assert.equal(movedAssets[0].position[0], 5.0);
+  assert.equal(movedAssets[0].position[1], 2.7);
+  const snappedCeiling = snapAssetToClosestSurfaceNow([portalWall, ceilingAsset], 'elev_ceil_1', 0.5);
+  const updatedCeiling = snappedCeiling.updatedAssets.find((a) => a.id === 'elev_ceil_1')!;
+  assert.equal(updatedCeiling.position[1], 2.7);
+});
+
+
