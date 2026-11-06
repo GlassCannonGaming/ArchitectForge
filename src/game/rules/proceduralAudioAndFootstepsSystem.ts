@@ -743,3 +743,325 @@ export function didCrossStrideFootstepPhase(
   return { triggered: false, stepIndex: prevStep };
 }
 
+/**
+ * Event types that can be bound to a specific Soundboard sound effect.
+ */
+export type SoundboardTriggerEventType =
+  | 'secret_passage_open'
+  | 'character_object_interact'
+  | 'door_open'
+  | 'player_object_interact'
+  | 'invisible_trigger_fire'
+  | 'suspicion_threshold_breach';
+
+export interface SoundboardTriggerEventMetadata {
+  eventType: SoundboardTriggerEventType;
+  label: string;
+  shortLabel: string;
+  icon: string;
+  description: string;
+  defaultSoundPresetId: string;
+  supportsTargetAsset: boolean;
+  supportsTargetAgent: boolean;
+}
+
+export const SOUNDBOARD_TRIGGER_EVENT_METADATA: SoundboardTriggerEventMetadata[] = [
+  {
+    eventType: 'secret_passage_open',
+    label: 'Hidden Door / Secret Passage Opening',
+    shortLabel: 'Hidden Door Open',
+    icon: '🚪',
+    description: 'Fires when a bookcase latch, sliding wainscot panel, or hidden passage swings open or closed.',
+    defaultSoundPresetId: 'door_creak',
+    supportsTargetAsset: true,
+    supportsTargetAgent: false,
+  },
+  {
+    eventType: 'character_object_interact',
+    label: 'Character Interacting with Object',
+    shortLabel: 'Character → Object',
+    icon: '🕵️',
+    description: 'Fires when a resident/suspect or character interacts with a specific furniture prop, telephone, safe, or clue object.',
+    defaultSoundPresetId: 'brass_bell',
+    supportsTargetAsset: true,
+    supportsTargetAgent: true,
+  },
+  {
+    eventType: 'door_open',
+    label: 'Standard Door Swing Open / Close',
+    shortLabel: 'Door Open/Close',
+    icon: '🔑',
+    description: 'Fires when a standard corridor or suite door is opened or closed.',
+    defaultSoundPresetId: 'door_latch',
+    supportsTargetAsset: true,
+    supportsTargetAgent: false,
+  },
+  {
+    eventType: 'player_object_interact',
+    label: 'Player Inspecting / Using Object [E]',
+    shortLabel: 'Player Inspect [E]',
+    icon: '🔍',
+    description: 'Fires when the detective directly inspects or toggles an interactive prop.',
+    defaultSoundPresetId: 'key_turn',
+    supportsTargetAsset: true,
+    supportsTargetAgent: false,
+  },
+  {
+    eventType: 'invisible_trigger_fire',
+    label: 'Invisible Event Trigger Volume Crossed',
+    shortLabel: 'Trigger Volume Fired',
+    icon: '⚡',
+    description: 'Fires when the player or a suspect crosses an invisible room/corridor event trigger zone.',
+    defaultSoundPresetId: 'clue_discover',
+    supportsTargetAsset: true,
+    supportsTargetAgent: false,
+  },
+  {
+    eventType: 'suspicion_threshold_breach',
+    label: 'Room Suspicion / Alert Threshold Breached',
+    shortLabel: 'Suspicion Spike',
+    icon: '💓',
+    description: 'Fires when a room or character crosses a high suspicion alert threshold.',
+    defaultSoundPresetId: 'heartbeat',
+    supportsTargetAsset: false,
+    supportsTargetAgent: true,
+  },
+];
+
+export interface SoundboardEventBinding {
+  id: string;
+  eventType: SoundboardTriggerEventType;
+  soundPresetId: string;
+  soundName: string;
+  /** 'any' or a specific PlacedAsset.id */
+  targetAssetId: string;
+  targetAssetName: string;
+  /** 'any' or a specific AgentData.id */
+  targetAgentId: string;
+  targetAgentName: string;
+  enabled: boolean;
+  triggeredCount: number;
+  lastTriggeredAt?: string;
+}
+
+export const DEFAULT_SOUNDBOARD_EVENT_BINDINGS: SoundboardEventBinding[] = [
+  {
+    id: 'evt_bind_secret_passage_default',
+    eventType: 'secret_passage_open',
+    soundPresetId: 'door_creak',
+    soundName: 'Creaking Corridor Door',
+    targetAssetId: 'any',
+    targetAssetName: 'Any Hidden Door / Secret Passage',
+    targetAgentId: 'any',
+    targetAgentName: 'Any Character',
+    enabled: true,
+    triggeredCount: 0,
+  },
+  {
+    id: 'evt_bind_char_interact_default',
+    eventType: 'character_object_interact',
+    soundPresetId: 'brass_bell',
+    soundName: 'Reception Desk Brass Bell',
+    targetAssetId: 'any',
+    targetAssetName: 'Any Interactive Object',
+    targetAgentId: 'any',
+    targetAgentName: 'Any Character',
+    enabled: true,
+    triggeredCount: 0,
+  },
+  {
+    id: 'evt_bind_door_open_default',
+    eventType: 'door_open',
+    soundPresetId: 'door_latch',
+    soundName: 'Heavy Brass Door Latch',
+    targetAssetId: 'any',
+    targetAssetName: 'Any Standard Door',
+    targetAgentId: 'any',
+    targetAgentName: 'Any Character',
+    enabled: true,
+    triggeredCount: 0,
+  },
+];
+
+export interface UpsertSoundboardEventBindingInput {
+  eventType: SoundboardTriggerEventType;
+  soundPresetId: string;
+  soundName: string;
+  targetAssetId?: string;
+  targetAssetName?: string;
+  targetAgentId?: string;
+  targetAgentName?: string;
+}
+
+/**
+ * Pure helper to create or update a Soundboard Event-to-Sound binding.
+ * If an existing binding already matches (eventType + targetAssetId + targetAgentId),
+ * it updates that binding's soundPresetId & soundName and enables it; otherwise it prepends a new binding.
+ */
+export function upsertSoundboardEventBinding(
+  bindings: SoundboardEventBinding[],
+  input: UpsertSoundboardEventBindingInput
+): {
+  updatedBindings: SoundboardEventBinding[];
+  binding: SoundboardEventBinding;
+  message: string;
+} {
+  const safeBindings = Array.isArray(bindings) ? bindings : [];
+  const targetAssetId = (input.targetAssetId || 'any').trim() || 'any';
+  const targetAgentId = (input.targetAgentId || 'any').trim() || 'any';
+  const meta = SOUNDBOARD_TRIGGER_EVENT_METADATA.find((m) => m.eventType === input.eventType);
+  const targetAssetName =
+    input.targetAssetName?.trim() ||
+    (targetAssetId === 'any'
+      ? input.eventType === 'secret_passage_open'
+        ? 'Any Hidden Door / Secret Passage'
+        : 'Any Matching Object'
+      : targetAssetId);
+  const targetAgentName =
+    input.targetAgentName?.trim() || (targetAgentId === 'any' ? 'Any Character' : targetAgentId);
+
+  const existingIndex = safeBindings.findIndex(
+    (b) =>
+      b.eventType === input.eventType &&
+      b.targetAssetId === targetAssetId &&
+      b.targetAgentId === targetAgentId
+  );
+
+  if (existingIndex >= 0) {
+    const existing = safeBindings[existingIndex];
+    const updated: SoundboardEventBinding = {
+      ...existing,
+      soundPresetId: input.soundPresetId,
+      soundName: input.soundName,
+      targetAssetName,
+      targetAgentName,
+      enabled: true,
+    };
+    const next = [...safeBindings];
+    next[existingIndex] = updated;
+    return {
+      updatedBindings: next,
+      binding: updated,
+      message: `Updated event binding: "${meta?.shortLabel ?? input.eventType}" (${targetAssetName}) → "${input.soundName}"`,
+    };
+  }
+
+  const created: SoundboardEventBinding = {
+    id: `evt_bind_${input.eventType}_${targetAssetId}_${targetAgentId}_${safeBindings.length + 1}`,
+    eventType: input.eventType,
+    soundPresetId: input.soundPresetId,
+    soundName: input.soundName,
+    targetAssetId,
+    targetAssetName,
+    targetAgentId,
+    targetAgentName,
+    enabled: true,
+    triggeredCount: 0,
+  };
+
+  return {
+    updatedBindings: [created, ...safeBindings],
+    binding: created,
+    message: `Bound "${input.soundName}" to event "${meta?.shortLabel ?? input.eventType}" (${targetAssetName}${
+      targetAgentId !== 'any' ? ` · ${targetAgentName}` : ''
+    })`,
+  };
+}
+
+export function removeSoundboardEventBinding(
+  bindings: SoundboardEventBinding[],
+  bindingId: string
+): SoundboardEventBinding[] {
+  if (!Array.isArray(bindings)) return [];
+  return bindings.filter((b) => b.id !== bindingId);
+}
+
+export function toggleSoundboardEventBinding(
+  bindings: SoundboardEventBinding[],
+  bindingId: string
+): SoundboardEventBinding[] {
+  if (!Array.isArray(bindings)) return [];
+  return bindings.map((b) => (b.id === bindingId ? { ...b, enabled: !b.enabled } : b));
+}
+
+/**
+ * Resolves the highest-priority enabled SoundboardEventBinding for a triggered runtime event.
+ * Specificity ranking:
+ *   1. Exact targetAssetId match + Exact targetAgentId match (score 4)
+ *   2. Exact targetAssetId match + wildcard 'any' agent (score 3)
+ *   3. Wildcard 'any' asset + Exact targetAgentId match (score 2)
+ *   4. Wildcard 'any' asset + wildcard 'any' agent (score 1)
+ * If no enabled event binding matches, falls back to asset.soundPresetId when available.
+ */
+export function resolveBoundSoundForTriggeredEvent(
+  bindings: SoundboardEventBinding[],
+  context: {
+    eventType: SoundboardTriggerEventType;
+    asset?: Pick<PlacedAsset, 'id' | 'name' | 'soundPresetId'> | null;
+    agentId?: string | null;
+    timestampLabel?: string;
+  }
+): {
+  matchedBinding: SoundboardEventBinding | null;
+  resolvedSoundPresetId: string | null;
+  updatedBindings: SoundboardEventBinding[];
+} {
+  const safeBindings = Array.isArray(bindings) ? bindings : [];
+  const assetId = context.asset?.id ?? null;
+  const agentId = context.agentId ?? null;
+
+  let bestBinding: SoundboardEventBinding | null = null;
+  let bestScore = -1;
+
+  for (const b of safeBindings) {
+    if (!b.enabled || b.eventType !== context.eventType) continue;
+    const assetExact = Boolean(assetId && b.targetAssetId === assetId);
+    const assetWild = b.targetAssetId === 'any' || !b.targetAssetId;
+    if (!assetExact && !assetWild) continue;
+
+    const agentExact = Boolean(agentId && b.targetAgentId === agentId);
+    const agentWild = b.targetAgentId === 'any' || !b.targetAgentId;
+    if (!agentExact && !agentWild) continue;
+
+    const score = (assetExact ? 2 : 0) + (agentExact ? 1 : 0) + 1;
+    if (score > bestScore) {
+      bestScore = score;
+      bestBinding = b;
+    }
+  }
+
+  if (bestBinding) {
+    const stamp = context.timestampLabel || new Date().toLocaleTimeString();
+    const updatedBindings = safeBindings.map((b) =>
+      b.id === bestBinding!.id
+        ? {
+            ...b,
+            triggeredCount: (b.triggeredCount || 0) + 1,
+            lastTriggeredAt: stamp,
+          }
+        : b
+    );
+    const updatedMatch = updatedBindings.find((b) => b.id === bestBinding!.id) || bestBinding;
+    return {
+      matchedBinding: updatedMatch,
+      resolvedSoundPresetId: bestBinding.soundPresetId,
+      updatedBindings,
+    };
+  }
+
+  if (context.asset?.soundPresetId) {
+    return {
+      matchedBinding: null,
+      resolvedSoundPresetId: context.asset.soundPresetId,
+      updatedBindings: safeBindings,
+    };
+  }
+
+  return {
+    matchedBinding: null,
+    resolvedSoundPresetId: null,
+    updatedBindings: safeBindings,
+  };
+}
+
+

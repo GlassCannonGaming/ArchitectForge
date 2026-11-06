@@ -37,7 +37,24 @@ import {
   inferVoiceProfileFromArchetypeAndName,
   computeCharacterCreatorWheelZoom,
   computeCharacterCreatorCursorZoomState,
-  CHARACTER_CREATOR_FOCUS_PRESETS
+  CHARACTER_CREATOR_FOCUS_PRESETS,
+  CHARACTER_CLOTHING_STYLES,
+  CHARACTER_CLOTHING_PATTERNS,
+  CharacterClothingStyleId,
+  CharacterClothingPattern,
+  CharacterClothingChoiceSpec,
+  resolveCharacterClothingStyle,
+  resolveCharacterClothingPattern,
+  resolveSecondaryClothingColor,
+  generateCharacterClothingChoices,
+  applyClothingChoiceToAppearance,
+  CHARACTER_HAIR_STYLES,
+  CHARACTER_HAIR_COLOR_SWATCHES,
+  CharacterHairStyleId,
+  resolveCharacterHairStyle,
+  getCharacterHairStyleMeta,
+  cycleCharacterHairStyle,
+  applyCharacterHairStyleSwitch
 } from '../game/rules';
 import { StudioWindowFrame } from './StudioWindowFrame';
 
@@ -93,14 +110,7 @@ const EYE_STYLES: CharacterAppearance['eyeStyle'][] = [
   'button_dark'
 ];
 
-const HAIR_STYLES: CharacterAppearance['hairStyle'][] = [
-  'silver_bun',
-  'permed_silver',
-  'swept_pompadour',
-  'messy_curls',
-  'bob_cut',
-  'bowler_hat'
-];
+const HAIR_STYLES: CharacterAppearance['hairStyle'][] = CHARACTER_HAIR_STYLES.map((s) => s.id);
 
 const FACIAL_EXPRESSIONS: FacialExpressionType[] = [
   'hollow_stare',
@@ -152,6 +162,7 @@ const MOUTH_STYLES: CharacterAppearance['mouthStyle'][] = [
 ];
 
 const OUTFIT_COLORS = ['#78352f', '#450a0a', '#1e3a8a', '#0f766e', '#581c87', '#374151', '#4b5563'];
+const SECONDARY_OUTFIT_COLORS = ['#262320', '#1f2631', '#27141a', '#1e1b2e', '#211324', '#292e37', '#1b2620'];
 const HAIR_COLORS = ['#451a03', '#1f2937', '#991b1b', '#d97706', '#9ca3af', '#d1d5db', '#581c87'];
 
 export const CharacterCreatorOverlay: React.FC<CharacterCreatorOverlayProps> = ({
@@ -184,6 +195,10 @@ export const CharacterCreatorOverlay: React.FC<CharacterCreatorOverlayProps> = (
 }) => {
   const [rightTab, setRightTab] = useState<'ai_persona' | 'daily_history' | 'stats_traits'>('ai_persona');
   const [charName, setCharName] = useState('Vincent Graves');
+  const [clothingGenNonce, setClothingGenNonce] = useState<number>(0);
+  const [generatedClothingChoices, setGeneratedClothingChoices] = useState<CharacterClothingChoiceSpec[]>(() =>
+    generateCharacterClothingChoices(appearance, 4, 0)
+  );
   const [googleAnimSelectedGesture, setGoogleAnimSelectedGesture] = useState<ScheduledActivityGesture>('idle_observe');
   const [googleAnimCustomPrompt, setGoogleAnimCustomPrompt] = useState(
     GOOGLE_AI_ANIMATION_PRESETS.idle_observe.motionPromptDirective
@@ -921,23 +936,141 @@ export const CharacterCreatorOverlay: React.FC<CharacterCreatorOverlayProps> = (
             <label className="block">
               <span className="text-[11px] font-bold text-slate-600">Hair / Hat</span>
               <select
-                value={appearance.hairStyle}
+                data-testid="char-hair-style-select"
+                value={resolveCharacterHairStyle(appearance)}
                 onChange={(e) => {
                   e.currentTarget.blur();
-                  onChangeAppearance({
-                    ...appearance,
-                    hairStyle: e.target.value as CharacterAppearance['hairStyle']
-                  });
+                  onChangeAppearance(
+                    applyCharacterHairStyleSwitch(
+                      appearance,
+                      e.target.value as CharacterHairStyleId
+                    )
+                  );
                 }}
                 className="mt-0.5 w-full bg-slate-50 border border-slate-300 rounded-full px-2.5 py-1 text-xs font-semibold text-slate-800"
               >
-                {HAIR_STYLES.map((hr) => (
-                  <option key={hr} value={hr}>
-                    {hr}
+                {CHARACTER_HAIR_STYLES.map((hr) => (
+                  <option key={hr.id} value={hr.id}>
+                    {hr.icon} {hr.label}
                   </option>
                 ))}
               </select>
             </label>
+          </div>
+
+          {/* 3D Hair Style & Salon Switcher */}
+          <div
+            data-testid="char-hair-switcher-panel"
+            className="bg-slate-900/95 border border-sky-500/40 text-slate-100 rounded-2xl p-2.5 space-y-2 shadow-inner"
+          >
+            <div className="flex items-center justify-between gap-1.5">
+              <div className="min-w-0">
+                <div className="text-[11px] font-extrabold text-sky-300 flex items-center gap-1">
+                  <span>💇 3D Hair Style Switcher</span>
+                  <span
+                    data-testid="char-active-hair-badge"
+                    className="px-1.5 py-0.2 rounded-full bg-sky-500/20 border border-sky-400/40 text-sky-200 text-[9px] font-mono truncate"
+                  >
+                    {getCharacterHairStyleMeta(resolveCharacterHairStyle(appearance)).shortLabel}
+                  </span>
+                </div>
+                <div className="text-[9px] text-slate-400 font-medium truncate">
+                  {getCharacterHairStyleMeta(resolveCharacterHairStyle(appearance)).description}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  data-testid="char-hair-prev-btn"
+                  onClick={() => {
+                    const prevMeta = cycleCharacterHairStyle(
+                      resolveCharacterHairStyle(appearance),
+                      'prev'
+                    );
+                    onChangeAppearance(applyCharacterHairStyleSwitch(appearance, prevMeta.id));
+                  }}
+                  className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-100 font-bold text-[10px] cursor-pointer"
+                  title="Previous Hair Style"
+                >
+                  ◀ Prev
+                </button>
+                <button
+                  type="button"
+                  data-testid="char-hair-next-btn"
+                  onClick={() => {
+                    const nextMeta = cycleCharacterHairStyle(
+                      resolveCharacterHairStyle(appearance),
+                      'next'
+                    );
+                    onChangeAppearance(applyCharacterHairStyleSwitch(appearance, nextMeta.id));
+                  }}
+                  className="px-2 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold text-[10px] cursor-pointer"
+                  title="Next Hair Style"
+                >
+                  Next ▶
+                </button>
+              </div>
+            </div>
+
+            {/* 12-Style Quick-Switch Chip Grid */}
+            <div className="grid grid-cols-3 gap-1">
+              {CHARACTER_HAIR_STYLES.map((style) => {
+                const isSelected = resolveCharacterHairStyle(appearance) === style.id;
+                return (
+                  <button
+                    key={style.id}
+                    type="button"
+                    data-testid={`char-hair-style-chip-${style.id}`}
+                    onClick={() =>
+                      onChangeAppearance(applyCharacterHairStyleSwitch(appearance, style.id))
+                    }
+                    className={`px-1.5 py-1 rounded-lg border text-left transition-all flex items-center gap-1 cursor-pointer min-w-0 ${
+                      isSelected
+                        ? 'bg-sky-500/25 border-sky-400 text-sky-100 font-extrabold shadow-2xs'
+                        : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800 hover:border-slate-500'
+                    }`}
+                    title={style.description}
+                  >
+                    <span className="text-[10px] shrink-0">{style.icon}</span>
+                    <span className="text-[9px] truncate">{style.shortLabel}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Natural Hair Color Swatches */}
+            <div className="flex items-center justify-between gap-1.5 pt-0.5">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider shrink-0">
+                Hair Tone:
+              </span>
+              <div className="flex items-center gap-1 flex-wrap justify-end">
+                {CHARACTER_HAIR_COLOR_SWATCHES.map((swatch, idx) => {
+                  const isActiveTone =
+                    appearance.hairColor?.toLowerCase() === swatch.hex.toLowerCase();
+                  return (
+                    <button
+                      key={swatch.id}
+                      type="button"
+                      data-testid={`char-hair-color-swatch-${idx}`}
+                      onClick={() =>
+                        onChangeAppearance({
+                          ...appearance,
+                          hairColor: swatch.hex
+                        })
+                      }
+                      style={{ backgroundColor: swatch.hex }}
+                      className={`w-4 h-4 rounded-full border transition-transform cursor-pointer ${
+                        isActiveTone
+                          ? 'border-white scale-115 ring-2 ring-sky-400'
+                          : 'border-slate-500 hover:scale-110'
+                      }`}
+                      title={`${swatch.label} (${swatch.hex})`}
+                    />
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
           <label className="block">
@@ -961,37 +1094,192 @@ export const CharacterCreatorOverlay: React.FC<CharacterCreatorOverlayProps> = (
             </select>
           </label>
 
-          <div className="flex items-center justify-between gap-2 pt-1">
-            <span className="text-[11px] font-bold text-slate-600">Outfit Swatch:</span>
-            <div className="flex items-center gap-1">
-              {OUTFIT_COLORS.map((col) => (
-                <button
-                  key={col}
-                  type="button"
-                  onClick={() => onChangeAppearance({ ...appearance, outfitColor: col })}
-                  className={`w-5 h-5 rounded-full border ${
-                    appearance.outfitColor === col ? 'ring-2 ring-[#10b981] scale-110' : 'border-slate-300'
-                  }`}
-                  style={{ backgroundColor: col }}
-                />
-              ))}
+          {/* Tailored 3D Wardrobe & Procedural Clothing Choice Generator */}
+          <div
+            data-testid="char-wardrobe-studio-panel"
+            className="bg-slate-900/95 border border-amber-500/40 text-slate-100 rounded-2xl p-2.5 space-y-2 shadow-inner"
+          >
+            <div className="flex items-center justify-between gap-1.5">
+              <div>
+                <div className="text-[11px] font-extrabold text-amber-300 flex items-center gap-1">
+                  🧥 Bespoke 3D Wardrobe &amp; Tailoring
+                </div>
+                <div className="text-[9px] text-slate-400 font-medium">
+                  Sculpted body contours, woven fabric bump &amp; 8 period ensembles
+                </div>
+              </div>
+              <button
+                type="button"
+                data-testid="generate-clothing-choices-btn"
+                onClick={() => {
+                  const nextNonce = clothingGenNonce + 1;
+                  setClothingGenNonce(nextNonce);
+                  const nextChoices = generateCharacterClothingChoices(appearance, 4, nextNonce);
+                  setGeneratedClothingChoices(nextChoices);
+                  if (nextChoices.length > 0) {
+                    onChangeAppearance(applyClothingChoiceToAppearance(appearance, nextChoices[0]));
+                  }
+                }}
+                className="px-2.5 py-1 rounded-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-[10px] shadow-sm transition-colors cursor-pointer shrink-0"
+                title="Generate 4 new period-authentic clothing ensembles and apply the lead look"
+              >
+                ✨ Generate Choices
+              </button>
             </div>
-          </div>
 
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-bold text-slate-600">Hair Swatch:</span>
-            <div className="flex items-center gap-1">
-              {HAIR_COLORS.map((col) => (
-                <button
-                  key={col}
-                  type="button"
-                  onClick={() => onChangeAppearance({ ...appearance, hairColor: col })}
-                  className={`w-5 h-5 rounded-full border ${
-                    appearance.hairColor === col ? 'ring-2 ring-[#10b981] scale-110' : 'border-slate-300'
-                  }`}
-                  style={{ backgroundColor: col }}
-                />
-              ))}
+            <div className="grid grid-cols-2 gap-2">
+              <label className="block">
+                <span className="text-[10px] font-bold text-slate-300">3D Garment Style</span>
+                <select
+                  data-testid="char-clothing-style-select"
+                  value={resolveCharacterClothingStyle(appearance)}
+                  onChange={(e) => {
+                    e.currentTarget.blur();
+                    const nextStyle = e.target.value as CharacterClothingStyleId;
+                    const styleEntry = CHARACTER_CLOTHING_STYLES.find((s) => s.id === nextStyle);
+                    onChangeAppearance({
+                      ...appearance,
+                      clothingStyle: nextStyle,
+                      clothingPattern: styleEntry?.defaultPattern || appearance.clothingPattern,
+                      customClothingLabel: styleEntry?.label
+                    });
+                  }}
+                  className="mt-0.5 w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-[10px] font-semibold text-slate-100"
+                >
+                  {CHARACTER_CLOTHING_STYLES.map((style) => (
+                    <option key={style.id} value={style.id}>
+                      {style.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="text-[10px] font-bold text-slate-300">Fabric Weave</span>
+                <select
+                  data-testid="char-clothing-pattern-select"
+                  value={resolveCharacterClothingPattern(appearance)}
+                  onChange={(e) => {
+                    e.currentTarget.blur();
+                    onChangeAppearance({
+                      ...appearance,
+                      clothingPattern: e.target.value as CharacterClothingPattern
+                    });
+                  }}
+                  className="mt-0.5 w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-[10px] font-semibold text-slate-100"
+                >
+                  {CHARACTER_CLOTHING_PATTERNS.map((pat) => (
+                    <option key={pat.id} value={pat.id}>
+                      {pat.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            {/* Generated 4 Outfit Choice Cards */}
+            <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+              {generatedClothingChoices.map((choice, idx) => {
+                const isCurrent =
+                  resolveCharacterClothingStyle(appearance) === choice.clothingStyle &&
+                  appearance.outfitColor === choice.outfitColor &&
+                  resolveCharacterClothingPattern(appearance) === choice.clothingPattern;
+                return (
+                  <button
+                    key={choice.id}
+                    type="button"
+                    data-testid={`clothing-choice-card-${idx}`}
+                    onClick={() => onChangeAppearance(applyClothingChoiceToAppearance(appearance, choice))}
+                    className={`text-left p-1.5 rounded-xl border transition-all cursor-pointer ${
+                      isCurrent
+                        ? 'bg-amber-500/20 border-amber-400 ring-1 ring-amber-400/50 shadow-sm'
+                        : 'bg-slate-800/90 hover:bg-slate-800 border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[8px] font-extrabold uppercase tracking-wider text-amber-300 bg-amber-500/20 border border-amber-400/30 px-1 py-0.2 rounded">
+                        {choice.eraBadge}
+                      </span>
+                      <div className="flex items-center gap-0.5">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full border border-slate-500"
+                          style={{ backgroundColor: choice.outfitColor }}
+                          title={`Coat: ${choice.outfitColor}`}
+                        />
+                        <span
+                          className="w-2.5 h-2.5 rounded-full border border-slate-500"
+                          style={{ backgroundColor: choice.secondaryClothingColor }}
+                          title={`Trousers/Layer: ${choice.secondaryClothingColor}`}
+                        />
+                        <span
+                          className="w-2 h-2 rounded-full border border-slate-500"
+                          style={{ backgroundColor: choice.accentColor }}
+                          title={`Trim: ${choice.accentColor}`}
+                        />
+                      </div>
+                    </div>
+                    <div className="text-[10px] font-bold text-slate-100 truncate mt-0.5">
+                      {choice.title}
+                    </div>
+                    <div className="text-[9px] text-slate-400 truncate">
+                      {choice.subtitle}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <span className="text-[10px] font-bold text-slate-300">Coat Swatch:</span>
+              <div className="flex items-center gap-1">
+                {OUTFIT_COLORS.map((col) => (
+                  <button
+                    key={col}
+                    type="button"
+                    onClick={() => onChangeAppearance({ ...appearance, outfitColor: col })}
+                    className={`w-4 h-4 rounded-full border ${
+                      appearance.outfitColor === col ? 'ring-2 ring-[#10b981] scale-110' : 'border-slate-500'
+                    }`}
+                    style={{ backgroundColor: col }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-bold text-slate-300">Trousers / Vest:</span>
+              <div className="flex items-center gap-1">
+                {SECONDARY_OUTFIT_COLORS.map((col) => (
+                  <button
+                    key={col}
+                    type="button"
+                    onClick={() => onChangeAppearance({ ...appearance, secondaryClothingColor: col })}
+                    className={`w-4 h-4 rounded-full border ${
+                      resolveSecondaryClothingColor(appearance) === col
+                        ? 'ring-2 ring-[#10b981] scale-110'
+                        : 'border-slate-500'
+                    }`}
+                    style={{ backgroundColor: col }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-bold text-slate-300">Hair Swatch:</span>
+              <div className="flex items-center gap-1">
+                {HAIR_COLORS.map((col) => (
+                  <button
+                    key={col}
+                    type="button"
+                    onClick={() => onChangeAppearance({ ...appearance, hairColor: col })}
+                    className={`w-4 h-4 rounded-full border ${
+                      appearance.hairColor === col ? 'ring-2 ring-[#10b981] scale-110' : 'border-slate-500'
+                    }`}
+                    style={{ backgroundColor: col }}
+                  />
+                ))}
+              </div>
             </div>
           </div>
 

@@ -22,7 +22,17 @@ import {
   TexturePresetId,
   isTvOrCrtScreenAsset,
   LIGHTING_PRESETS,
-  LIGHTING_MOOD_QUICK_PROMPTS
+  LIGHTING_MOOD_QUICK_PROMPTS,
+  CHARACTER_CLOTHING_STYLES,
+  CharacterClothingStyleId,
+  resolveCharacterClothingStyle,
+  generateCharacterClothingChoices,
+  applyClothingChoiceToAppearance,
+  CHARACTER_HAIR_STYLES,
+  CHARACTER_HAIR_COLOR_SWATCHES,
+  CharacterHairStyleId,
+  resolveCharacterHairStyle,
+  cycleCharacterHairStyle
 } from '../game/rules';
 import { AssetBlueprint } from '../game/hotelData';
 
@@ -45,7 +55,11 @@ interface QuickEditWindowFProps {
     isLightEmitting?: boolean;
     lightingPreset?: string;
     customAnimationFps?: number | null;
+    isLocked?: boolean;
   }) => void;
+  onToggleLockSelected?: () => void;
+  isSelectionLocked?: boolean;
+  lockedSelectedCount?: number;
   onSelectEntireRoom?: () => void;
   onInteractKeyE: (asset: PlacedAsset) => void;
   onDuplicate: (asset: PlacedAsset) => void;
@@ -95,6 +109,9 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
   screenPosition,
   onClose,
   onBatchModify,
+  onToggleLockSelected,
+  isSelectionLocked,
+  lockedSelectedCount,
   onSelectEntireRoom,
   onInteractKeyE,
   onDuplicate,
@@ -119,6 +136,7 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
   const [minimized, setMinimized] = useState<boolean>(false);
   const [setNameDraft, setSetNameDraft] = useState<string>('');
   const [moodPromptDraft, setMoodPromptDraft] = useState<string>('1978 Noir Detective Interrogation');
+  const [agentClothingGenNonce, setAgentClothingGenNonce] = useState<number>(0);
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
 
   // Reset custom drag offset if primary asset or selected agent changes
@@ -559,6 +577,193 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
                   />
                 </div>
               </div>
+
+              {/* 3D Hair Style & Tone Switcher for Placed Character */}
+              <div className="pt-1 border-t border-slate-200/80 space-y-1.5">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[10px] font-extrabold text-sky-900">
+                    💇 3D Hair Style Switcher
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      data-testid="quick-edit-agent-hair-prev-btn"
+                      onClick={() => {
+                        const prevMeta = cycleCharacterHairStyle(
+                          resolveCharacterHairStyle(selectedAgent.appearance),
+                          'prev'
+                        );
+                        updateAppearanceField(
+                          { hairStyle: prevMeta.id },
+                          `Switched ${selectedAgent.name}'s hair to ${prevMeta.label}`
+                        );
+                      }}
+                      className="px-1.5 py-0.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-800 text-[9px] font-extrabold cursor-pointer"
+                      title="Previous Hair Style"
+                    >
+                      ◀
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="quick-edit-agent-hair-next-btn"
+                      onClick={() => {
+                        const nextMeta = cycleCharacterHairStyle(
+                          resolveCharacterHairStyle(selectedAgent.appearance),
+                          'next'
+                        );
+                        updateAppearanceField(
+                          { hairStyle: nextMeta.id },
+                          `Switched ${selectedAgent.name}'s hair to ${nextMeta.label}`
+                        );
+                      }}
+                      className="px-1.5 py-0.5 rounded bg-sky-600 hover:bg-sky-500 text-white text-[9px] font-extrabold cursor-pointer"
+                      title="Next Hair Style"
+                    >
+                      ▶
+                    </button>
+                  </div>
+                </div>
+
+                <select
+                  data-testid="quick-edit-agent-hair-select"
+                  value={resolveCharacterHairStyle(selectedAgent.appearance)}
+                  onChange={(e) => {
+                    const nextHair = e.target.value as CharacterHairStyleId;
+                    const entry = CHARACTER_HAIR_STYLES.find((h) => h.id === nextHair);
+                    updateAppearanceField(
+                      { hairStyle: nextHair },
+                      `Switched ${selectedAgent.name}'s hair to ${entry?.label || nextHair}`
+                    );
+                  }}
+                  className="w-full bg-white border border-sky-300 rounded-lg px-2 py-1 text-[10px] font-bold text-slate-800"
+                >
+                  {CHARACTER_HAIR_STYLES.map((hr) => (
+                    <option key={hr.id} value={hr.id}>
+                      {hr.icon} {hr.label}
+                    </option>
+                  ))}
+                </select>
+
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[9px] font-semibold text-slate-600">Tone:</span>
+                  <div className="flex items-center gap-1">
+                    {CHARACTER_HAIR_COLOR_SWATCHES.map((sw, idx) => (
+                      <button
+                        key={sw.id}
+                        type="button"
+                        data-testid={`quick-edit-agent-hair-swatch-${idx}`}
+                        onClick={() =>
+                          updateAppearanceField(
+                            { hairColor: sw.hex },
+                            `Updated ${selectedAgent.name}'s hair color to ${sw.label}`
+                          )
+                        }
+                        style={{ backgroundColor: sw.hex }}
+                        className="w-3.5 h-3.5 rounded-full border border-slate-400 hover:scale-110 transition-transform cursor-pointer"
+                        title={sw.label}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Wardrobe & Generated Outfit Choices for Placed Character */}
+              <div className="pt-1 border-t border-slate-200/80 space-y-1.5">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[10px] font-extrabold text-amber-900">
+                    🧥 3D Clothing &amp; Generator
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="quick-edit-agent-generate-clothing-btn"
+                    onClick={() => {
+                      const nextNonce = agentClothingGenNonce + 1;
+                      setAgentClothingGenNonce(nextNonce);
+                      const choices = generateCharacterClothingChoices(
+                        selectedAgent.appearance,
+                        4,
+                        nextNonce
+                      );
+                      if (choices.length > 0) {
+                        const updatedApp = applyClothingChoiceToAppearance(
+                          selectedAgent.appearance,
+                          choices[0]
+                        );
+                        onUpdateAgent?.(
+                          {
+                            ...selectedAgent,
+                            appearance: updatedApp
+                          },
+                          `Equipped "${choices[0].title}" on ${selectedAgent.name}`
+                        );
+                      }
+                    }}
+                    className="px-2 py-0.5 rounded-full bg-amber-600 hover:bg-amber-500 text-white text-[9px] font-extrabold shadow-2xs cursor-pointer"
+                  >
+                    ✨ Generate 4 Outfits
+                  </button>
+                </div>
+
+                <select
+                  data-testid="quick-edit-agent-clothing-select"
+                  value={resolveCharacterClothingStyle(selectedAgent.appearance)}
+                  onChange={(e) => {
+                    const nextStyle = e.target.value as CharacterClothingStyleId;
+                    const entry = CHARACTER_CLOTHING_STYLES.find((s) => s.id === nextStyle);
+                    updateAppearanceField(
+                      {
+                        clothingStyle: nextStyle,
+                        clothingPattern: entry?.defaultPattern || selectedAgent.appearance?.clothingPattern,
+                        customClothingLabel: entry?.label
+                      },
+                      `Changed ${selectedAgent.name} outfit to ${entry?.label || nextStyle}`
+                    );
+                  }}
+                  className="w-full bg-white border border-amber-300 rounded-lg px-2 py-1 text-[10px] font-bold text-slate-800"
+                >
+                  {CHARACTER_CLOTHING_STYLES.map((st) => (
+                    <option key={st.id} value={st.id}>
+                      {st.label} ({st.eraBadge})
+                    </option>
+                  ))}
+                </select>
+
+                <div className="grid grid-cols-2 gap-1">
+                  {generateCharacterClothingChoices(
+                    selectedAgent.appearance,
+                    4,
+                    agentClothingGenNonce
+                  ).map((choice, idx) => (
+                    <button
+                      key={choice.id}
+                      type="button"
+                      data-testid={`quick-edit-clothing-choice-${idx}`}
+                      onClick={() => {
+                        const updatedApp = applyClothingChoiceToAppearance(
+                          selectedAgent.appearance,
+                          choice
+                        );
+                        onUpdateAgent?.(
+                          {
+                            ...selectedAgent,
+                            appearance: updatedApp
+                          },
+                          `Applied "${choice.title}" to ${selectedAgent.name}`
+                        );
+                      }}
+                      className="flex items-center gap-1 p-1 rounded-lg bg-white hover:bg-amber-50 border border-slate-200 text-left cursor-pointer"
+                    >
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0 border border-slate-400"
+                        style={{ backgroundColor: choice.outfitColor }}
+                      />
+                      <span className="text-[9px] font-bold text-slate-700 truncate">
+                        {choice.title}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* 5. ACTION BUTTONS */}
@@ -741,6 +946,31 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
     window.addEventListener('pointerup', onUp);
   };
 
+  const effectiveIsLocked =
+    typeof isSelectionLocked === 'boolean'
+      ? isSelectionLocked
+      : Boolean(primaryAsset.isLocked);
+  const effectiveLockedCount =
+    typeof lockedSelectedCount === 'number'
+      ? lockedSelectedCount
+      : effectiveIsLocked
+      ? selectedCount
+      : 0;
+
+  const handleToggleLock = () => {
+    safeExecuteCatalogOrVariantCallback(
+      () => {
+        if (onToggleLockSelected) {
+          onToggleLockSelected();
+        } else {
+          safeBatchModify({ isLocked: !effectiveIsLocked });
+        }
+      },
+      undefined,
+      'QuickEdit.handleToggleLock'
+    );
+  };
+
   return (
     <div
       role="dialog"
@@ -768,17 +998,29 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
             F
           </span>
           <div className="truncate">
-            <div
-              className={`text-xs font-extrabold text-slate-100 truncate ${
-                unkemptOrAged ? 'unkempt-aged-flicker' : ''
-              }`}
-            >
-              {selectedCount > 1
-                ? `${selectedCount} Assets Selected`
-                : primaryAsset.name}
+            <div className="flex items-center gap-1.5">
+              <div
+                className={`text-xs font-extrabold text-slate-100 truncate ${
+                  unkemptOrAged ? 'unkempt-aged-flicker' : ''
+                }`}
+              >
+                {selectedCount > 1
+                  ? `${selectedCount} Assets Selected`
+                  : primaryAsset.name}
+              </div>
+              {effectiveLockedCount > 0 && (
+                <span
+                  data-testid="quick-edit-lock-status-badge"
+                  className="px-1.5 py-0.2 rounded-full bg-amber-500/20 border border-amber-400/70 text-amber-300 text-[9px] font-extrabold shrink-0"
+                >
+                  🔒 {selectedCount > 1 && !effectiveIsLocked ? `${effectiveLockedCount}/${selectedCount}` : 'LOCKED'}
+                </span>
+              )}
             </div>
             <div className="text-[10px] font-medium text-[#38bdf8] truncate">
-              {unkemptOrAged
+              {effectiveIsLocked
+                ? '🔒 Protected vs Move & Delete'
+                : unkemptOrAged
                 ? `🕯️ Atmospheric Flicker (${effectiveAssetFps} FPS) · Drag to Move`
                 : 'Quick Edit Window · Drag to Move'}
             </div>
@@ -805,7 +1047,56 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
       </div>
 
       {!minimized && (
-        <div className="p-3.5 space-y-2.5">
+        <div className="p-3.5 space-y-2.5 max-h-[calc(100vh-140px)] overflow-y-auto">
+          {/* 0. ASSET LOCK PROTECTION BAR (Prevents Accidental Movement or Deletion) */}
+          <div
+            data-testid="quick-edit-lock-panel"
+            className={`flex items-center justify-between gap-2 rounded-2xl px-2.5 py-1.5 border transition-colors ${
+              effectiveIsLocked
+                ? 'bg-amber-950/80 border-amber-500/80 text-amber-100'
+                : effectiveLockedCount > 0
+                ? 'bg-amber-950/45 border-amber-600/60 text-amber-200'
+                : 'bg-slate-800/80 border-slate-700 text-slate-200'
+            }`}
+          >
+            <div className="min-w-0">
+              <div className="text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1">
+                <span>{effectiveIsLocked ? '🔒 Asset Locked' : '🔓 Asset Lock'}</span>
+              </div>
+              <div className="text-[9px] text-slate-300 truncate">
+                {effectiveIsLocked
+                  ? 'Movement & deletion blocked'
+                  : effectiveLockedCount > 0
+                  ? `${effectiveLockedCount} of ${selectedCount} selected locked`
+                  : 'Prevent accidental move or delete'}
+              </div>
+            </div>
+            <button
+              type="button"
+              data-testid="quick-edit-lock-toggle-btn"
+              aria-pressed={effectiveIsLocked}
+              onClick={handleToggleLock}
+              title={
+                effectiveIsLocked
+                  ? 'Unlock selected asset(s) to allow movement and deletion'
+                  : 'Lock selected asset(s) to prevent accidental movement or deletion'
+              }
+              className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold shrink-0 transition-all shadow-2xs ${
+                effectiveIsLocked
+                  ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 ring-1 ring-amber-200'
+                  : 'bg-slate-700 hover:bg-slate-600 text-slate-100 border border-slate-500'
+              }`}
+            >
+              {effectiveIsLocked
+                ? selectedCount > 1
+                  ? `🔓 Unlock (${selectedCount})`
+                  : '🔓 Unlock'
+                : selectedCount > 1
+                ? `🔒 Lock (${selectedCount})`
+                : '🔒 Lock'}
+            </button>
+          </div>
+
           {/* 1. RESIZE CONTROLS (Uniform Scale + W / H / D Dimensions) */}
           <div className="space-y-1.5 bg-slate-50/90 border border-slate-200 rounded-2xl p-2">
             <div className="flex items-center justify-between">
@@ -1290,10 +1581,13 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
             <button
               type="button"
               data-testid="quick-edit-rotate-90-btn"
+              disabled={effectiveIsLocked}
               onClick={() => safeBatchModify({ rotationDeltaY: Math.PI / 2 })}
-              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-full text-[11px] font-bold text-slate-700"
+              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 disabled:opacity-45 disabled:cursor-not-allowed rounded-full text-[11px] font-bold text-slate-700"
               title={
-                selectedCount > 1
+                effectiveIsLocked
+                  ? 'Asset is Locked — Unlock to rotate'
+                  : selectedCount > 1
                   ? 'Rotate [R]: Rotates each wall for a wall row, or rotates the entire room as a single selection'
                   : 'Rotate 90° [R]'
               }
@@ -1316,10 +1610,11 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
                 <button
                   type="button"
                   data-testid="quick-edit-rotate-room-group-btn"
+                  disabled={effectiveIsLocked}
                   onClick={() =>
                     safeBatchModify({ rotationDeltaY: Math.PI / 2, rotatePivotMode: 'group' })
                   }
-                  className="px-2 py-0.5 bg-indigo-100 hover:bg-indigo-200 rounded-full text-[10px] font-bold text-indigo-900 truncate"
+                  className="px-2 py-0.5 bg-indigo-100 hover:bg-indigo-200 disabled:opacity-45 disabled:cursor-not-allowed rounded-full text-[10px] font-bold text-indigo-900 truncate"
                   title="Force rotate all selected objects together around their shared center pivot"
                 >
                   🏢 Rotate as Single Selection
@@ -1327,10 +1622,11 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
                 <button
                   type="button"
                   data-testid="quick-edit-rotate-individual-btn"
+                  disabled={effectiveIsLocked}
                   onClick={() =>
                     safeBatchModify({ rotationDeltaY: Math.PI / 2, rotatePivotMode: 'individual' })
                   }
-                  className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 rounded-full text-[10px] font-bold text-slate-800 truncate"
+                  className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 disabled:opacity-45 disabled:cursor-not-allowed rounded-full text-[10px] font-bold text-slate-800 truncate"
                   title="Rotate each selected object individually in place"
                 >
                   🧱 Rotate Each Individually
@@ -1469,6 +1765,13 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
             )}
             <button
               type="button"
+              data-testid="quick-edit-delete-btn"
+              disabled={effectiveIsLocked}
+              title={
+                effectiveIsLocked
+                  ? 'Asset is Locked — Unlock in Quick Edit [F] first to delete'
+                  : `Delete ${selectedCount} selected asset(s)`
+              }
               onClick={() =>
                 safeExecuteCatalogOrVariantCallback(
                   () => onDeleteSelected(),
@@ -1476,9 +1779,9 @@ export const QuickEditWindowF: React.FC<QuickEditWindowFProps> = ({
                   'QuickEdit.onDeleteSelected'
                 )
               }
-              className="px-2.5 py-1 bg-rose-100 hover:bg-rose-200 rounded-full text-[11px] font-bold text-rose-700"
+              className="px-2.5 py-1 bg-rose-100 hover:bg-rose-200 disabled:bg-slate-300 disabled:text-slate-600 disabled:cursor-not-allowed rounded-full text-[11px] font-bold text-rose-700"
             >
-              Delete ({selectedCount})
+              {effectiveIsLocked ? `🔒 Locked (${selectedCount})` : `Delete (${selectedCount})`}
             </button>
             {onCopySelected && (
               <button

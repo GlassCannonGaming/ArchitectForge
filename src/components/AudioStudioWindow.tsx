@@ -16,7 +16,15 @@ import {
   evaluateRoomSuspicionLevel,
   RoomSuspicionState,
   GEMINI_PREBUILT_VOICES,
-  GeminiPrebuiltVoiceName
+  GeminiPrebuiltVoiceName,
+  SoundboardTriggerEventType,
+  SoundboardEventBinding,
+  SOUNDBOARD_TRIGGER_EVENT_METADATA,
+  DEFAULT_SOUNDBOARD_EVENT_BINDINGS,
+  UpsertSoundboardEventBindingInput,
+  upsertSoundboardEventBinding,
+  removeSoundboardEventBinding,
+  toggleSoundboardEventBinding
 } from '../game/rules';
 import { AssetBlueprint } from '../game/hotelData';
 import { StudioWindowFrame } from './StudioWindowFrame';
@@ -61,6 +69,11 @@ interface AudioStudioWindowProps {
       voiceSoundPresetId: SoundEffectType;
     }
   ) => void;
+  soundEventBindings?: SoundboardEventBinding[];
+  onUpsertSoundEventBinding?: (input: UpsertSoundboardEventBindingInput) => void;
+  onRemoveSoundEventBinding?: (bindingId: string) => void;
+  onToggleSoundEventBinding?: (bindingId: string) => void;
+  onTestFireSoundEventBinding?: (binding: SoundboardEventBinding) => void;
 }
 
 export const AudioStudioWindow: React.FC<AudioStudioWindowProps> = ({
@@ -85,7 +98,12 @@ export const AudioStudioWindow: React.FC<AudioStudioWindowProps> = ({
   suspicionAmbienceThreshold = 60,
   onUpdateSuspicionThreshold,
   onUpdateAgentSuspicion,
-  onUpdateAgentVoiceProfile
+  onUpdateAgentVoiceProfile,
+  soundEventBindings,
+  onUpsertSoundEventBinding,
+  onRemoveSoundEventBinding,
+  onToggleSoundEventBinding,
+  onTestFireSoundEventBinding
 }) => {
   const [activeTab, setActiveTab] = useState<'sfx' | 'bgm' | 'settings'>('sfx');
 
@@ -120,6 +138,393 @@ export const AudioStudioWindow: React.FC<AudioStudioWindowProps> = ({
     targetBlueprintSubTypeForSound ||
     activeBlueprintSubType ||
     (catalogAssets[0]?.subType ?? '');
+
+  // Event-to-Sound Trigger Binding State
+  const [localEventBindings, setLocalEventBindings] = useState<SoundboardEventBinding[]>(
+    DEFAULT_SOUNDBOARD_EVENT_BINDINGS
+  );
+  const activeEventBindings = soundEventBindings ?? localEventBindings;
+  const [selectedEventType, setSelectedEventType] =
+    useState<SoundboardTriggerEventType>('secret_passage_open');
+  const [selectedEventTargetAssetId, setSelectedEventTargetAssetId] = useState<string>('any');
+  const [selectedEventTargetAgentId, setSelectedEventTargetAgentId] = useState<string>('any');
+  const [selectedEventSoundPreset, setSelectedEventSoundPreset] =
+    useState<SoundEffectType>('door_creak');
+
+  const activeEventMeta =
+    SOUNDBOARD_TRIGGER_EVENT_METADATA.find((m) => m.eventType === selectedEventType) ||
+    SOUNDBOARD_TRIGGER_EVENT_METADATA[0];
+
+  const handleBindSoundToEvent = () => {
+    const soundSpec =
+      BUILTIN_SOUND_EFFECTS[selectedEventSoundPreset] || BUILTIN_SOUND_EFFECTS.door_creak;
+    const targetAssetObj =
+      selectedEventTargetAssetId !== 'any'
+        ? assets.find((a) => a.id === selectedEventTargetAssetId)
+        : null;
+    const targetAgentObj =
+      selectedEventTargetAgentId !== 'any'
+        ? agents.find((a) => a.id === selectedEventTargetAgentId)
+        : null;
+
+    const targetAssetName = targetAssetObj
+      ? `${targetAssetObj.name} (${targetAssetObj.floor.toUpperCase()})`
+      : selectedEventType === 'secret_passage_open'
+        ? 'Any Hidden Door / Secret Passage'
+        : selectedEventType === 'door_open'
+          ? 'Any Standard Door'
+          : 'Any Interactive Object';
+
+    const targetAgentName = targetAgentObj
+      ? `${targetAgentObj.name} (${targetAgentObj.roomNumber})`
+      : 'Any Character';
+
+    const input: UpsertSoundboardEventBindingInput = {
+      eventType: selectedEventType,
+      soundPresetId: selectedEventSoundPreset,
+      soundName: soundSpec.name,
+      targetAssetId: selectedEventTargetAssetId,
+      targetAssetName,
+      targetAgentId: activeEventMeta.supportsTargetAgent ? selectedEventTargetAgentId : 'any',
+      targetAgentName: activeEventMeta.supportsTargetAgent ? targetAgentName : 'Any Character'
+    };
+
+    const result = upsertSoundboardEventBinding(activeEventBindings, input);
+    if (onUpsertSoundEventBinding) {
+      onUpsertSoundEventBinding(input);
+    } else {
+      setLocalEventBindings(result.updatedBindings);
+    }
+    audioEngine.playSoundEffect(soundSpec);
+    setSfxFeedback(`🔗 ${result.message}`);
+  };
+
+  const handleTriggerTestEventBinding = (binding: SoundboardEventBinding) => {
+    const presetKey = binding.soundPresetId as SoundEffectType;
+    const spec = BUILTIN_SOUND_EFFECTS[presetKey] || activeSfxSpec;
+    audioEngine.playSoundEffect(spec);
+    if (onTestFireSoundEventBinding) {
+      onTestFireSoundEventBinding(binding);
+    } else {
+      setLocalEventBindings((prev) =>
+        prev.map((b) =>
+          b.id === binding.id
+            ? {
+                ...b,
+                triggeredCount: (b.triggeredCount || 0) + 1,
+                lastTriggeredAt: new Date().toLocaleTimeString()
+              }
+            : b
+        )
+      );
+    }
+    const meta = SOUNDBOARD_TRIGGER_EVENT_METADATA.find((m) => m.eventType === binding.eventType);
+    setSfxFeedback(
+      `⚡ Tested Event "${meta?.shortLabel ?? binding.eventType}" (${binding.targetAssetName}) → Played "${binding.soundName}"`
+    );
+  };
+
+  const renderEventBindingSection = (scopePrefix: 'window' | 'deck') => {
+    const isDeck = scopePrefix === 'deck';
+    const filteredAssets = assets.filter((a) => {
+      if (selectedEventType === 'secret_passage_open') {
+        return Boolean(
+          a.isSecretPassage ||
+            a.category === 'secret_wall' ||
+            a.category === 'door' ||
+            a.name.toLowerCase().includes('bookcase') ||
+            a.name.toLowerCase().includes('secret') ||
+            a.name.toLowerCase().includes('passage')
+        );
+      }
+      if (selectedEventType === 'door_open') {
+        return a.category === 'door' || Boolean(a.isSecretPassage);
+      }
+      return true;
+    });
+    const assetOptions = filteredAssets.length > 0 ? filteredAssets : assets;
+
+    return (
+      <div
+        data-testid={
+          isDeck ? 'soundboard-event-bindings-panel' : 'window-soundboard-event-bindings-panel'
+        }
+        className="p-3 rounded-2xl bg-slate-950 border border-amber-500/30 space-y-2.5"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+            <span>⚡</span>
+            <span>
+              {isDeck
+                ? '2C · Event-to-SFX Trigger Bindings (Doors & Interactions)'
+                : 'Event-to-Sound Trigger Bindings (Hidden Doors & Object Interactions)'}
+            </span>
+          </span>
+          <span
+            data-testid={isDeck ? 'soundboard-event-bindings-count' : undefined}
+            className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/40"
+          >
+            {activeEventBindings.filter((b) => b.enabled).length} Active Rules
+          </span>
+        </div>
+
+        <p className="text-[10px] text-slate-400 leading-tight">
+          {activeEventMeta.description}
+        </p>
+
+        {/* Event Type + Bound Sound Selectors */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+          <div>
+            <label className="block text-[9px] uppercase tracking-wider text-slate-400 mb-0.5">
+              1. Triggered Event
+            </label>
+            <select
+              aria-label="Select Triggered Event Type"
+              data-testid={
+                isDeck ? 'soundboard-event-type-select' : 'window-soundboard-event-type-select'
+              }
+              value={selectedEventType}
+              onChange={(e) => {
+                const nextType = e.target.value as SoundboardTriggerEventType;
+                setSelectedEventType(nextType);
+                setSelectedEventTargetAssetId('any');
+                const meta = SOUNDBOARD_TRIGGER_EVENT_METADATA.find(
+                  (m) => m.eventType === nextType
+                );
+                if (meta && meta.defaultSoundPresetId in BUILTIN_SOUND_EFFECTS) {
+                  setSelectedEventSoundPreset(meta.defaultSoundPresetId as SoundEffectType);
+                }
+              }}
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2 py-1 text-[11px] text-slate-100 truncate"
+            >
+              {SOUNDBOARD_TRIGGER_EVENT_METADATA.map((meta) => (
+                <option key={meta.eventType} value={meta.eventType}>
+                  {meta.icon} {meta.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-0.5">
+              <label className="text-[9px] uppercase tracking-wider text-slate-400">
+                2. Sound Effect to Play
+              </label>
+              <button
+                type="button"
+                onClick={() => setSelectedEventSoundPreset(selectedPresetType)}
+                className="text-[9px] text-amber-400 hover:text-amber-300 underline"
+                title="Sync with currently selected Soundboard Pad"
+              >
+                Use Active Pad ({BUILTIN_SOUND_EFFECTS[selectedPresetType]?.name})
+              </button>
+            </div>
+            <select
+              aria-label="Select Sound Effect for Event"
+              data-testid={
+                isDeck ? 'soundboard-event-sound-select' : 'window-soundboard-event-sound-select'
+              }
+              value={selectedEventSoundPreset}
+              onChange={(e) => setSelectedEventSoundPreset(e.target.value as SoundEffectType)}
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2 py-1 text-[11px] text-amber-200 truncate"
+            >
+              {(Object.keys(BUILTIN_SOUND_EFFECTS) as SoundEffectType[]).map((type) => (
+                <option key={type} value={type}>
+                  🔊 {BUILTIN_SOUND_EFFECTS[type].name} ({type})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Target Object & Optional Character Filter */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+          {activeEventMeta.supportsTargetAsset && (
+            <div>
+              <label className="block text-[9px] uppercase tracking-wider text-slate-400 mb-0.5">
+                3. Specific Object / Door Target
+              </label>
+              <select
+                aria-label="Select Target Object or Door for Event Binding"
+                data-testid={
+                  isDeck
+                    ? 'soundboard-event-target-asset-select'
+                    : 'window-soundboard-event-target-asset-select'
+                }
+                value={selectedEventTargetAssetId}
+                onChange={(e) => setSelectedEventTargetAssetId(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2 py-1 text-[11px] text-slate-200 truncate"
+              >
+                <option value="any">
+                  {selectedEventType === 'secret_passage_open'
+                    ? '🚪 Any Hidden Door / Secret Passage'
+                    : selectedEventType === 'door_open'
+                      ? '🔑 Any Standard Door'
+                      : '🎯 Any Matching Interactive Object'}
+                </option>
+                {assetOptions.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.isSecretPassage || a.category === 'secret_wall' ? '🚪 [Hidden] ' : ''}
+                    {a.name} ({a.floor.toUpperCase()})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {activeEventMeta.supportsTargetAgent && (
+            <div>
+              <label className="block text-[9px] uppercase tracking-wider text-slate-400 mb-0.5">
+                4. Character Filter
+              </label>
+              <select
+                aria-label="Select Target Character for Event Binding"
+                data-testid={
+                  isDeck
+                    ? 'soundboard-event-target-agent-select'
+                    : 'window-soundboard-event-target-agent-select'
+                }
+                value={selectedEventTargetAgentId}
+                onChange={(e) => setSelectedEventTargetAgentId(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2 py-1 text-[11px] text-slate-200 truncate"
+              >
+                <option value="any">🕵️ Any Character / Suspect</option>
+                {agents.map((ag) => (
+                  <option key={ag.id} value={ag.id}>
+                    {ag.name} ({ag.roomNumber})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+
+        {/* Bind Action Button */}
+        <div className="flex items-center justify-between gap-2 pt-0.5">
+          <button
+            type="button"
+            data-testid={isDeck ? 'soundboard-bind-event-btn' : 'window-soundboard-bind-event-btn'}
+            onClick={handleBindSoundToEvent}
+            className="w-full py-1.5 px-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+          >
+            <span>🔗 Bind Sound to Triggered Event</span>
+          </button>
+        </div>
+
+        {/* Bound Event Rules List */}
+        <div
+          data-testid={
+            isDeck ? 'soundboard-event-binding-list' : 'window-soundboard-event-binding-list'
+          }
+          className="space-y-1.5 max-h-44 overflow-y-auto pr-0.5 pt-1"
+        >
+          {activeEventBindings.map((binding, idx) => {
+            const meta = SOUNDBOARD_TRIGGER_EVENT_METADATA.find(
+              (m) => m.eventType === binding.eventType
+            );
+            return (
+              <div
+                key={binding.id}
+                data-testid={
+                  isDeck
+                    ? `soundboard-event-binding-row-${idx}`
+                    : `window-soundboard-event-binding-row-${idx}`
+                }
+                className={`p-2 rounded-xl border text-[10px] flex items-center justify-between gap-2 transition-colors ${
+                  binding.enabled
+                    ? 'bg-slate-900/90 border-slate-700 text-slate-200'
+                    : 'bg-slate-950/60 border-slate-800/70 text-slate-500 opacity-65'
+                }`}
+              >
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-bold text-amber-300">
+                      {meta?.icon ?? '⚡'} {meta?.shortLabel ?? binding.eventType}
+                    </span>
+                    <span className="text-slate-400">→</span>
+                    <span className="px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-600/40 text-emerald-300 font-mono">
+                      🔊 {binding.soundName}
+                    </span>
+                    {binding.triggeredCount > 0 && (
+                      <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-200 font-mono text-[9px]">
+                        Fired {binding.triggeredCount}×
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[9px] text-slate-400 truncate font-mono">
+                    Target: {binding.targetAssetName}
+                    {binding.targetAgentId !== 'any' ? ` · Agent: ${binding.targetAgentName}` : ''}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    data-testid={
+                      isDeck
+                        ? `soundboard-test-event-binding-${idx}`
+                        : `window-soundboard-test-event-binding-${idx}`
+                    }
+                    onClick={() => handleTriggerTestEventBinding(binding)}
+                    className="px-2 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-[10px]"
+                    title="Simulate this triggered event and audition its bound sound effect"
+                  >
+                    ▶ Test
+                  </button>
+                  <button
+                    type="button"
+                    data-testid={
+                      isDeck
+                        ? `soundboard-toggle-event-binding-${idx}`
+                        : `window-soundboard-toggle-event-binding-${idx}`
+                    }
+                    onClick={() => {
+                      if (onToggleSoundEventBinding) {
+                        onToggleSoundEventBinding(binding.id);
+                      } else {
+                        setLocalEventBindings((prev) =>
+                          toggleSoundboardEventBinding(prev, binding.id)
+                        );
+                      }
+                    }}
+                    className={`px-1.5 py-1 rounded-lg border text-[10px] font-mono ${
+                      binding.enabled
+                        ? 'bg-slate-800 border-emerald-500/50 text-emerald-300'
+                        : 'bg-slate-900 border-slate-700 text-slate-400'
+                    }`}
+                    title={binding.enabled ? 'Enabled (Click to Mute)' : 'Muted (Click to Enable)'}
+                  >
+                    {binding.enabled ? 'ON' : 'OFF'}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid={
+                      isDeck
+                        ? `soundboard-delete-event-binding-${idx}`
+                        : `window-soundboard-delete-event-binding-${idx}`
+                    }
+                    onClick={() => {
+                      if (onRemoveSoundEventBinding) {
+                        onRemoveSoundEventBinding(binding.id);
+                      } else {
+                        setLocalEventBindings((prev) =>
+                          removeSoundboardEventBinding(prev, binding.id)
+                        );
+                      }
+                    }}
+                    className="px-1.5 py-1 rounded-lg bg-rose-950/60 hover:bg-rose-900/80 border border-rose-700/50 text-rose-300 text-[10px]"
+                    title="Remove Event Binding"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   // BGM State
   const [activeBgmTrack, setActiveBgmTrack] = useState<MusicTrackSpec>(BUILTIN_BGM_TRACKS[0]);
@@ -739,6 +1144,9 @@ export const AudioStudioWindow: React.FC<AudioStudioWindowProps> = ({
               </div>
             </div>
 
+            {/* Event-to-Sound Trigger Bindings inside main Audio Studio Window */}
+            {renderEventBindingSection('window')}
+
             {sfxFeedback && (
               <div className="p-2 rounded bg-amber-950/30 border border-amber-600/40 text-amber-300 font-mono text-[10px]">
                 {sfxFeedback}
@@ -976,9 +1384,9 @@ export const AudioStudioWindow: React.FC<AudioStudioWindowProps> = ({
       aria-label="Sound Board Trigger Deck & Acoustic Foley Tools"
       style={{
         left: '642px',
-        top: '84px',
+        top: '148px',
         width: '490px',
-        height: '575px',
+        height: '620px',
         zIndex: 31
       }}
       className="fixed pointer-events-auto rounded-3xl overflow-hidden border border-slate-700 bg-slate-900/95 backdrop-blur-md shadow-2xl flex flex-col text-slate-100 text-xs select-none"
@@ -1252,6 +1660,9 @@ export const AudioStudioWindow: React.FC<AudioStudioWindowProps> = ({
             </button>
           </div>
         </div>
+
+        {/* 2C. Event-to-SFX Trigger Bindings (Hidden Doors, Character Object Interactions, Triggers) */}
+        {renderEventBindingSection('deck')}
 
         {/* 3. Room Suspicion Ambience Radar & Sound Board Loop */}
         <div

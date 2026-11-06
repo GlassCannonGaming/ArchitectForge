@@ -25,6 +25,9 @@ import {
   computeSurfaceSnappedPosition,
   snapAssetToClosestSurfaceNow,
   batchModifySelectedAssets,
+  getSelectionLockState,
+  toggleSelectedAssetsLock,
+  deleteUnlockedSelectedAssets,
   DEFAULT_GLOBAL_INSTRUCTION_SET,
   SavedInteractionEntry,
   NotebookMemoEntry,
@@ -87,6 +90,14 @@ import {
   removeFloorLayer,
   getTaskbarWindowIdsForMode,
   assignSoundToAssetOrBlueprint,
+  SoundboardEventBinding,
+  DEFAULT_SOUNDBOARD_EVENT_BINDINGS,
+  UpsertSoundboardEventBindingInput,
+  upsertSoundboardEventBinding,
+  removeSoundboardEventBinding,
+  toggleSoundboardEventBinding,
+  resolveBoundSoundForTriggeredEvent,
+  SOUNDBOARD_TRIGGER_EVENT_METADATA,
   AssetSet,
   AssetClipboardPayload,
   INITIAL_ASSET_SETS,
@@ -534,6 +545,33 @@ export default function App() {
       // ignore storage error
     }
   }, [assetSets]);
+
+  // Soundboard Event-to-Sound Trigger Bindings (Hidden Doors, Character Object Interactions, Triggers)
+  const [soundEventBindings, setSoundEventBindings] = useState<SoundboardEventBinding[]>(() => {
+    try {
+      const saved = localStorage.getItem('architectforge_soundboard_event_bindings_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch {
+      // ignore storage error
+    }
+    return DEFAULT_SOUNDBOARD_EVENT_BINDINGS;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        'architectforge_soundboard_event_bindings_v1',
+        JSON.stringify(soundEventBindings)
+      );
+    } catch {
+      // ignore storage error
+    }
+  }, [soundEventBindings]);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -1549,6 +1587,16 @@ export default function App() {
             : [];
         if (targetIds.length > 0) {
           e.preventDefault();
+          const lockState = getSelectionLockState(assets, targetIds);
+          if (lockState.allLocked) {
+            const firstLocked = assets.find((a) => targetIds.includes(a.id));
+            setStatusBanner(
+              `🔒 Cannot rotate: "${
+                firstLocked ? firstLocked.name : 'Selected asset'
+              }" is Locked — Unlock in Quick Edit [F] first.`
+            );
+            return;
+          }
           soundFX.playPlaceAsset();
           const selectedObjs = assets.filter((a) => targetIds.includes(a.id));
           const rotatedAsRoomGroup =
@@ -1582,24 +1630,28 @@ export default function App() {
             : [];
         if (targetIds.length > 0) {
           e.preventDefault();
-          const deleteSet = new Set(targetIds);
-          const primary = assets.find((a) => a.id === targetIds[0]);
+          const delRes = deleteUnlockedSelectedAssets(assets, targetIds);
+          if (delRes.deletedCount === 0) {
+            setStatusBanner(delRes.message);
+            return;
+          }
+          const primary = assets.find((a) => a.id === delRes.deletedIds[0]);
           recordUndoSnapshot(
-            targetIds.length > 1
-              ? `Delete ${targetIds.length} selected assets`
+            delRes.deletedCount > 1
+              ? `Delete ${delRes.deletedCount} selected assets`
               : `Delete "${primary ? primary.name : 'Asset'}"`
           );
-          setAssets((prev) => prev.filter((a) => !deleteSet.has(a.id)));
-          setSelectedAssetId(null);
-          setSelectedAssetIds([]);
-          setQuickEditWindowOpen(false);
-          setIsolateSelectedAsset(false);
-          const delLabel = getPrimaryActionKeyLabel('delete_asset', keybindings);
-          setStatusBanner(
-            `Deleted ${targetIds.length} ${
-              targetIds.length === 1 ? 'object' : 'selected objects'
-            } [${delLabel}] — Press Ctrl+Z to undo.`
-          );
+          setAssets(delRes.remainingAssets);
+          if (delRes.lockedIds.length > 0) {
+            setSelectedAssetIds(delRes.lockedIds);
+            setSelectedAssetId(delRes.lockedIds[0]);
+          } else {
+            setSelectedAssetId(null);
+            setSelectedAssetIds([]);
+            setQuickEditWindowOpen(false);
+            setIsolateSelectedAsset(false);
+          }
+          setStatusBanner(delRes.message);
           return;
         }
       }
@@ -1815,10 +1867,21 @@ export default function App() {
   // Record snapshot once at the start of a 3D viewport drag gesture (supports single or multi-asset drag)
   const handleBeginAssetDrag = useCallback(
     (assetId: string) => {
+      const dragged = assets.find((a) => a.id === assetId);
+      const targetIds =
+        selectedAssetIds.length > 1 && selectedAssetIds.includes(assetId)
+          ? selectedAssetIds
+          : [assetId];
+      const lockState = getSelectionLockState(assets, targetIds);
+      if (dragged?.isLocked || lockState.allLocked) {
+        setStatusBanner(
+          `🔒 "${dragged ? dragged.name : 'Selected asset'}" is Locked — Unlock in Quick Edit [F] to move.`
+        );
+        return;
+      }
       if (selectedAssetIds.length > 1 && selectedAssetIds.includes(assetId)) {
-        recordUndoSnapshot(`Move ${selectedAssetIds.length} selected assets`);
+        recordUndoSnapshot(`Move ${ lockState.unlockedCount } selected assets`);
       } else {
-        const dragged = assets.find((a) => a.id === assetId);
         recordUndoSnapshot(`Move "${dragged ? dragged.name : 'Asset'}"`);
       }
     },
@@ -1851,6 +1914,12 @@ export default function App() {
     }
     const target = assets.find((a) => a.id === selectedAssetId);
     if (!target) return;
+    if (target.isLocked) {
+      setStatusBanner(
+        `🔒 "${target.name}" is Locked — Unlock in Quick Edit [F] before snapping.`
+      );
+      return;
+    }
     recordUndoSnapshot(`Surface-snap "${target.name}"`);
     const { updatedAssets, snappedToName, snappedFace } = snapAssetToClosestSurfaceNow(
       assets,
@@ -1873,6 +1942,25 @@ export default function App() {
     }
   }, [assets, selectedAssetId, recordUndoSnapshot, snapGridSize]);
 
+  // Toggle Lock on selected asset(s) from the [F] Quick Edit Window to prevent accidental movement or deletion
+  const handleToggleLockSelectedAssets = useCallback(() => {
+    const targetIds =
+      selectedAssetIds.length > 0
+        ? selectedAssetIds
+        : selectedAssetId
+        ? [selectedAssetId]
+        : [];
+    if (targetIds.length === 0) return;
+    const res = toggleSelectedAssetsLock(assets, targetIds);
+    if (res.affectedCount === 0) return;
+    recordUndoSnapshot(
+      `${res.nextLockedState ? 'Lock' : 'Unlock'} ${res.affectedCount} asset(s)`
+    );
+    soundFX.playPlaceAsset();
+    setAssets(res.updatedAssets);
+    setStatusBanner(res.message);
+  }, [assets, selectedAssetIds, selectedAssetId, recordUndoSnapshot]);
+
   // Batch resize, recolor, rotate, or change hinge swing mode on selected asset(s) from the [F] Quick Edit Window
   const handleBatchModifySelected = useCallback(
     (patch: {
@@ -1889,6 +1977,7 @@ export default function App() {
       isLightEmitting?: boolean;
       lightingPreset?: string;
       customAnimationFps?: number | null;
+      isLocked?: boolean;
     }) => {
       const targetIds =
         selectedAssetIds.length > 0
@@ -1897,6 +1986,15 @@ export default function App() {
           ? [selectedAssetId]
           : [];
       if (targetIds.length === 0) return;
+      if (patch.rotationDeltaY !== undefined) {
+        const lockState = getSelectionLockState(assets, targetIds);
+        if (lockState.allLocked) {
+          setStatusBanner(
+            '🔒 Selected asset(s) are Locked — Unlock in Quick Edit [F] first to rotate.'
+          );
+          return;
+        }
+      }
       recordUndoSnapshot(
         targetIds.length > 1
           ? `Quick-edit ${targetIds.length} assets`
@@ -1904,14 +2002,18 @@ export default function App() {
       );
       setAssets((prev) => batchModifySelectedAssets(prev, targetIds, patch));
       setStatusBanner(
-        patch.hingeSwingMode
+        patch.isLocked !== undefined
+          ? patch.isLocked
+            ? `🔒 Locked ${targetIds.length} ${targetIds.length === 1 ? 'asset' : 'selected assets'} via Quick Edit [F].`
+            : `🔓 Unlocked ${targetIds.length} ${targetIds.length === 1 ? 'asset' : 'selected assets'} via Quick Edit [F].`
+          : patch.hingeSwingMode
           ? `Set 500ms Hinge Swing Mode to "${patch.hingeSwingMode}" via Quick Edit [F] — Press [E] to test!`
           : `Updated ${targetIds.length} ${
               targetIds.length === 1 ? 'asset' : 'selected assets'
             } via Quick Edit [F] — Use Undo (Ctrl+Z) to revert.`
       );
     },
-    [selectedAssetIds, selectedAssetId, recordUndoSnapshot]
+    [assets, selectedAssetIds, selectedAssetId, recordUndoSnapshot]
   );
 
   // Select all assets belonging to the active room at once so pressing [R] rotates the entire room with assets as a single selection
@@ -1992,6 +2094,25 @@ export default function App() {
         durationMs: HINGE_TRANSITION_DURATION_MS
       });
 
+      // Evaluate Soundboard Event-to-SFX Trigger Binding for hidden doors or standard doors
+      const eventType = isSecret ? 'secret_passage_open' : 'door_open';
+      const boundEval = resolveBoundSoundForTriggeredEvent(soundEventBindings, {
+        eventType,
+        asset
+      });
+      let boundCueLabel = '';
+      if (boundEval.resolvedSoundPresetId) {
+        const boundSpec =
+          BUILTIN_SOUND_EFFECTS[boundEval.resolvedSoundPresetId as keyof typeof BUILTIN_SOUND_EFFECTS];
+        if (boundSpec) {
+          audioEngine.playSoundEffect(boundSpec);
+          boundCueLabel = ` · 🔊 Bound SFX: ${boundSpec.name}`;
+        }
+        if (boundEval.matchedBinding) {
+          setSoundEventBindings(boundEval.updatedBindings);
+        }
+      }
+
       const existingTimer = hingeTimersRef.current.get(asset.id);
       if (existingTimer) {
         window.clearTimeout(existingTimer);
@@ -2007,7 +2128,7 @@ export default function App() {
       setSelectedAssetId(asset.id);
       setSelectedAssetIds((prev) => (prev.includes(asset.id) ? prev : [asset.id]));
       setStatusBanner(
-        `${nextOpen ? 'Opening' : 'Closing'} "${asset.name}" [E] over ${HINGE_TRANSITION_DURATION_MS}ms (${swingMode} · ${foleySpec.descriptionLabel})...`
+        `${nextOpen ? 'Opening' : 'Closing'} "${asset.name}" [E] over ${HINGE_TRANSITION_DURATION_MS}ms (${swingMode} · ${foleySpec.descriptionLabel}${boundCueLabel})...`
       );
 
       const timerId = window.setTimeout(() => {
@@ -2027,13 +2148,13 @@ export default function App() {
           )
         );
         setStatusBanner(
-          `${nextOpen ? 'Opened' : 'Closed'} "${asset.name}" [E] (${HINGE_TRANSITION_DURATION_MS}ms ${swingMode} complete + 480ms latch click).`
+          `${nextOpen ? 'Opened' : 'Closed'} "${asset.name}" [E] (${HINGE_TRANSITION_DURATION_MS}ms ${swingMode} complete + 480ms latch click${boundCueLabel}).`
         );
       }, HINGE_TRANSITION_DURATION_MS);
 
       hingeTimersRef.current.set(asset.id, timerId);
     },
-    [recordUndoSnapshot]
+    [recordUndoSnapshot, soundEventBindings]
   );
 
   // Dedicated "E" key interaction handler across Walkthrough & 3D Asset Builder modes
@@ -2047,20 +2168,25 @@ export default function App() {
 
       // Resolve shared character rig interact animation for this specific asset
       const interactGesture = resolveAssetInteractionAnimationGesture(asset);
-      setAgents((prevAgents) => {
-        const floorAgents = prevAgents.filter(
-          (ag) => ag.floor === asset.floor && ag.role !== 'helper_entity'
+      const floorAgents = agents.filter(
+        (ag) => ag.floor === asset.floor && ag.role !== 'helper_entity'
+      );
+      const nearestAg =
+        floorAgents.length > 0
+          ? [...floorAgents].sort(
+              (a, b) =>
+                Math.hypot(a.position[0] - asset.position[0], a.position[2] - asset.position[2]) -
+                Math.hypot(b.position[0] - asset.position[0], b.position[2] - asset.position[2])
+            )[0]
+          : null;
+
+      if (nearestAg) {
+        setAgents((prevAgents) =>
+          prevAgents.map((ag) =>
+            ag.id === nearestAg.id ? { ...ag, activeInteractGesture: interactGesture } : ag
+          )
         );
-        if (floorAgents.length === 0) return prevAgents;
-        const nearestAg = [...floorAgents].sort(
-          (a, b) =>
-            Math.hypot(a.position[0] - asset.position[0], a.position[2] - asset.position[2]) -
-            Math.hypot(b.position[0] - asset.position[0], b.position[2] - asset.position[2])
-        )[0];
-        return prevAgents.map((ag) =>
-          ag.id === nearestAg.id ? { ...ag, activeInteractGesture: interactGesture } : ag
-        );
-      });
+      }
 
       if (asset.isSecretPassage || asset.category === 'door' || asset.category === 'secret_wall') {
         handleToggleAssetOpen(asset);
@@ -2068,15 +2194,48 @@ export default function App() {
       }
 
       recordUndoSnapshot(`Interact with "${asset.name}"`);
-      soundFX.playClueFound();
+
+      // Check Soundboard Event-to-Sound Trigger Bindings for character_object_interact or player_object_interact
+      const charBoundEval = resolveBoundSoundForTriggeredEvent(soundEventBindings, {
+        eventType: 'character_object_interact',
+        asset,
+        agentId: nearestAg?.id ?? null
+      });
+      const finalBoundEval =
+        charBoundEval.resolvedSoundPresetId
+          ? charBoundEval
+          : resolveBoundSoundForTriggeredEvent(soundEventBindings, {
+              eventType: 'player_object_interact',
+              asset
+            });
+
+      let boundCueLabel = '';
+      if (finalBoundEval.resolvedSoundPresetId) {
+        const boundSpec =
+          BUILTIN_SOUND_EFFECTS[
+            finalBoundEval.resolvedSoundPresetId as keyof typeof BUILTIN_SOUND_EFFECTS
+          ];
+        if (boundSpec) {
+          audioEngine.playSoundEffect(boundSpec);
+          boundCueLabel = ` · 🔊 Bound SFX: ${boundSpec.name}`;
+        } else {
+          soundFX.playClueFound();
+        }
+        if (finalBoundEval.matchedBinding) {
+          setSoundEventBindings(finalBoundEval.updatedBindings);
+        }
+      } else {
+        soundFX.playClueFound();
+      }
+
       const { updatedAsset, visualState, message } = toggleAssetInteractiveState(asset);
       setAssets((prev) => prev.map((a) => (a.id === asset.id ? updatedAsset : a)));
       saveItemToDedicatedFolder('environment_3d', updatedAsset.name, updatedAsset, updatedAsset.id);
       setStatusBanner(
-        `${message} (${visualState.statusSummary}) · 🎬 Shared Rig Animation: [${interactGesture}] — Press [F] to open Quick Edit.`
+        `${message} (${visualState.statusSummary}) · 🎬 Shared Rig Animation: [${interactGesture}]${boundCueLabel} — Press [F] to open Quick Edit.`
       );
     },
-    [handleToggleAssetOpen, recordUndoSnapshot, saveItemToDedicatedFolder]
+    [agents, handleToggleAssetOpen, recordUndoSnapshot, saveItemToDedicatedFolder, soundEventBindings]
   );
 
   // Evaluate Invisible In-Game Event Triggers when the player moves in First-Person Walk Mode
@@ -2100,13 +2259,21 @@ export default function App() {
 
       setAssets(evalRes.updatedAssets);
       const primaryTrigger = newlyFired[0];
-      const sfxSpec = primaryTrigger.soundPresetId
-        ? BUILTIN_SOUND_EFFECTS[primaryTrigger.soundPresetId as keyof typeof BUILTIN_SOUND_EFFECTS]
+      const boundTriggerEval = resolveBoundSoundForTriggeredEvent(soundEventBindings, {
+        eventType: 'invisible_trigger_fire',
+        asset: primaryTrigger
+      });
+      const resolvedPreset = boundTriggerEval.resolvedSoundPresetId || primaryTrigger.soundPresetId;
+      const sfxSpec = resolvedPreset
+        ? BUILTIN_SOUND_EFFECTS[resolvedPreset as keyof typeof BUILTIN_SOUND_EFFECTS]
         : undefined;
       if (sfxSpec) {
         audioEngine.playSoundEffect(sfxSpec);
       } else {
         soundFX.playClueFound();
+      }
+      if (boundTriggerEval.matchedBinding) {
+        setSoundEventBindings(boundTriggerEval.updatedBindings);
       }
       if (evalRes.triggeredEvents[0]?.eventType === 'npc_anomaly') {
         setAgents((prev) =>
@@ -2119,7 +2286,7 @@ export default function App() {
       }
       setStatusBanner(evalRes.bannerMessage || `👻 Activated Invisible Trigger "${primaryTrigger.name}"!`);
     },
-    [assets]
+    [assets, soundEventBindings]
   );
 
   // Swap selected asset(s) between 'pristine', 'unkempt', and 'updated' (1990s asset set) in a SINGLE atomic batch update
@@ -2255,7 +2422,13 @@ export default function App() {
           setAssets((prev) => {
             const existing = prev.find((a) => a.id === updated.id);
             let finalAsset = updated;
-            if (
+            if (existing?.isLocked && updated.isLocked !== false) {
+              finalAsset = {
+                ...updated,
+                position: [existing.position[0], updated.position[1], existing.position[2]],
+                rotationY: existing.rotationY
+              };
+            } else if (
               surfaceSnapEnabled &&
               existing &&
               (existing.position[0] !== updated.position[0] ||
@@ -2291,30 +2464,35 @@ export default function App() {
     [recordUndoSnapshot, surfaceSnapEnabled, snapGridSize]
   );
 
-  // Delete asset (or all multi-selected assets) from floor (Deletion -> tracked on undo stack)
+  // Delete asset (or all multi-selected assets) from floor (Deletion -> tracked on undo stack; respects isLocked)
   const handleDeleteAsset = useCallback(
     (id: string) => {
       const idsToDelete =
         selectedAssetIds.length > 1 && selectedAssetIds.includes(id)
           ? selectedAssetIds
           : [id];
-      const deleteSet = new Set(idsToDelete);
-      const target = assets.find((a) => a.id === id);
+      const delRes = deleteUnlockedSelectedAssets(assets, idsToDelete);
+      if (delRes.deletedCount === 0) {
+        setStatusBanner(delRes.message);
+        return;
+      }
+      const target = assets.find((a) => a.id === delRes.deletedIds[0]);
       recordUndoSnapshot(
-        idsToDelete.length > 1
-          ? `Delete ${idsToDelete.length} selected assets`
+        delRes.deletedCount > 1
+          ? `Delete ${delRes.deletedCount} selected assets`
           : `Delete "${target ? target.name : 'Asset'}"`
       );
-      setAssets((prev) => prev.filter((a) => !deleteSet.has(a.id)));
-      setSelectedAssetId(null);
-      setSelectedAssetIds([]);
-      setQuickEditWindowOpen(false);
-      setIsolateSelectedAsset(false);
-      setStatusBanner(
-        idsToDelete.length > 1
-          ? `Deleted ${idsToDelete.length} selected objects — Use Undo (Ctrl+Z) to restore.`
-          : `Deleted "${target ? target.name : '3D object'}" from canvas layer — Use Undo (Ctrl+Z) to restore.`
-      );
+      setAssets(delRes.remainingAssets);
+      if (delRes.lockedIds.length > 0) {
+        setSelectedAssetIds(delRes.lockedIds);
+        setSelectedAssetId(delRes.lockedIds[0]);
+      } else {
+        setSelectedAssetId(null);
+        setSelectedAssetIds([]);
+        setQuickEditWindowOpen(false);
+        setIsolateSelectedAsset(false);
+      }
+      setStatusBanner(delRes.message);
     },
     [assets, selectedAssetIds, recordUndoSnapshot]
   );
@@ -2641,6 +2819,73 @@ export default function App() {
       );
     },
     [saveItemToDedicatedFolder]
+  );
+
+  const handleUpsertSoundEventBinding = useCallback(
+    (input: UpsertSoundboardEventBindingInput) => {
+      setSoundEventBindings((prev) => {
+        const res = upsertSoundboardEventBinding(prev, input);
+        setStatusBanner(`🔗 ${res.message}`);
+        return res.updatedBindings;
+      });
+    },
+    []
+  );
+
+  const handleRemoveSoundEventBinding = useCallback((bindingId: string) => {
+    setSoundEventBindings((prev) => removeSoundboardEventBinding(prev, bindingId));
+    setStatusBanner('🗑️ Removed Soundboard event-to-sound binding.');
+  }, []);
+
+  const handleToggleSoundEventBinding = useCallback((bindingId: string) => {
+    setSoundEventBindings((prev) => toggleSoundboardEventBinding(prev, bindingId));
+  }, []);
+
+  const handleTestFireSoundEventBinding = useCallback(
+    (binding: SoundboardEventBinding) => {
+      // Increment trigger counter on the binding
+      setSoundEventBindings((prev) =>
+        prev.map((b) =>
+          b.id === binding.id
+            ? {
+                ...b,
+                triggeredCount: (b.triggeredCount || 0) + 1,
+                lastTriggeredAt: new Date().toLocaleTimeString()
+              }
+            : b
+        )
+      );
+
+      // If the binding targets a specific door/secret passage or object, also trigger its in-world animation if found
+      const targetAsset =
+        binding.targetAssetId !== 'any'
+          ? assets.find((a) => a.id === binding.targetAssetId)
+          : binding.eventType === 'secret_passage_open'
+            ? assets.find(
+                (a) =>
+                  a.floor === currentFloor &&
+                  (a.isSecretPassage || a.category === 'secret_wall')
+              )
+            : binding.eventType === 'door_open'
+              ? assets.find((a) => a.floor === currentFloor && a.category === 'door')
+              : null;
+
+      if (
+        targetAsset &&
+        (binding.eventType === 'secret_passage_open' || binding.eventType === 'door_open')
+      ) {
+        handleToggleAssetOpen(targetAsset);
+        return;
+      }
+
+      const meta = SOUNDBOARD_TRIGGER_EVENT_METADATA.find(
+        (m) => m.eventType === binding.eventType
+      );
+      setStatusBanner(
+        `⚡ Fired Soundboard Event "${meta?.label ?? binding.eventType}" (${binding.targetAssetName}) → Played "${binding.soundName}"!`
+      );
+    },
+    [assets, currentFloor, handleToggleAssetOpen]
   );
 
   // Load & instantiate a Room Blueprint onto the active floor layer (tracked on Undo stack)
@@ -3836,6 +4081,7 @@ export default function App() {
   const lastUndoLabel = undoStack.length > 0 ? undoStack[undoStack.length - 1].actionLabel : null;
   const activeSelectionCount =
     selectedAssetIds.length > 0 ? selectedAssetIds.length : selectedAsset ? 1 : 0;
+  const selectionLockState = getSelectionLockState(assets, selectedAssetIds, selectedAssetId);
 
   return (
     <main
@@ -3931,6 +4177,9 @@ export default function App() {
           screenPosition={selectedAgent ? selectedAgentScreenPos : selectedAssetScreenPos}
           onClose={() => setQuickEditWindowOpen(false)}
           onBatchModify={handleBatchModifySelected}
+          onToggleLockSelected={handleToggleLockSelectedAssets}
+          isSelectionLocked={selectionLockState.allLocked}
+          lockedSelectedCount={selectionLockState.lockedCount}
           onSelectEntireRoom={handleSelectEntireRoom}
           onInteractKeyE={handleInteractWithAssetKeyE}
           onDuplicate={handleDuplicateAsset}
@@ -4564,6 +4813,11 @@ export default function App() {
             onUpdateSuspicionThreshold={setSuspicionAmbienceThreshold}
             onUpdateAgentSuspicion={handleUpdateAgentSuspicion}
             onUpdateAgentVoiceProfile={handleUpdateAgentVoiceProfile}
+            soundEventBindings={soundEventBindings}
+            onUpsertSoundEventBinding={handleUpsertSoundEventBinding}
+            onRemoveSoundEventBinding={handleRemoveSoundEventBinding}
+            onToggleSoundEventBinding={handleToggleSoundEventBinding}
+            onTestFireSoundEventBinding={handleTestFireSoundEventBinding}
           />
         )}
 

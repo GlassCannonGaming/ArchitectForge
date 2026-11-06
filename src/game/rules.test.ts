@@ -5239,4 +5239,533 @@ test('All 280 catalog assets sit flush on the floor (worldMinY = 0), elevator sl
   assert.equal(updatedCeiling.position[1], 2.7);
 });
 
+test('Subtest 70: Smooth Continuous Facial & Mandible Sculpting Geometry, Bilateral Symmetry, and Realistic Character Rig Integration', async () => {
+  const {
+    computeNaturalCharacterAnatomySpec,
+    computeSmoothFacialVertexDisplacement,
+    computeSmoothMandibleVertexDisplacement,
+    computeFacialRigParams,
+    computeSkeletonPose,
+    getArchetypeDefaults
+  } = await import('./rules');
+  const {
+    buildSmoothSculptedHeadGeometry,
+    buildSmoothSculptedMandibleGeometry,
+    buildCharacterToonGroup,
+    applySkeletonPoseToRig
+  } = await import('./procedural3D');
+
+  const clerkDefaults = getArchetypeDefaults('Detective Clerk') as any;
+  const baseAnatomy = computeNaturalCharacterAnatomySpec({
+    ...clerkDefaults,
+    headShape: 'proportional_human'
+  });
+
+  // 1. Bilateral symmetry across +/- nx for both craniofacial and mandible displacement fields
+  const sampleNormals: Array<[number, number, number]> = [
+    [0.42, 0.25, 0.87],
+    [0.65, -0.12, 0.75],
+    [0.28, -0.35, 0.89]
+  ];
+  for (const [nx, ny, nz] of sampleNormals) {
+    const len = Math.hypot(nx, ny, nz);
+    const ux = nx / len;
+    const uy = ny / len;
+    const uz = nz / len;
+
+    const rightHead = computeSmoothFacialVertexDisplacement(ux, uy, uz, baseAnatomy);
+    const leftHead = computeSmoothFacialVertexDisplacement(-ux, uy, uz, baseAnatomy);
+    assert.equal(Math.abs(rightHead[0] + leftHead[0]) < 1e-6, true, 'Head x must be bilaterally symmetric');
+    assert.equal(Math.abs(rightHead[1] - leftHead[1]) < 1e-6, true, 'Head y must be bilaterally symmetric');
+    assert.equal(Math.abs(rightHead[2] - leftHead[2]) < 1e-6, true, 'Head z must be bilaterally symmetric');
+
+    const rightJaw = computeSmoothMandibleVertexDisplacement(ux, uy, uz, baseAnatomy);
+    const leftJaw = computeSmoothMandibleVertexDisplacement(-ux, uy, uz, baseAnatomy);
+    assert.equal(Math.abs(rightJaw[0] + leftJaw[0]) < 1e-6, true, 'Mandible x must be bilaterally symmetric');
+    assert.equal(Math.abs(rightJaw[1] - leftJaw[1]) < 1e-6, true, 'Mandible y must be bilaterally symmetric');
+    assert.equal(Math.abs(rightJaw[2] - leftJaw[2]) < 1e-6, true, 'Mandible z must be bilaterally symmetric');
+  }
+
+  // 2. Anatomical feature responsiveness:
+  // - Nasal tip projects further forward (+Z) than recessed eye socket
+  const noseTipNormal: [number, number, number] = [0, -0.14 / Math.hypot(0.14, 0.99), 0.99 / Math.hypot(0.14, 0.99)];
+  const socketNormal: [number, number, number] = [
+    0.34 / Math.hypot(0.34, 0.09, 0.935),
+    0.09 / Math.hypot(0.34, 0.09, 0.935),
+    0.935 / Math.hypot(0.34, 0.09, 0.935)
+  ];
+  const noseTipPos = computeSmoothFacialVertexDisplacement(noseTipNormal[0], noseTipNormal[1], noseTipNormal[2], baseAnatomy);
+  const socketPos = computeSmoothFacialVertexDisplacement(socketNormal[0], socketNormal[1], socketNormal[2], baseAnatomy);
+  assert.equal(noseTipPos[2] > socketPos[2] + 0.02, true, 'Continuous nasal tip must project smoothly forward of recessed eye socket');
+
+  // - Prominent chin projects further forward (+Z) in mandible mesh than subtle chin
+  const prominentChinAnatomy = computeNaturalCharacterAnatomySpec({ ...clerkDefaults, headShape: 'tall_noir' });
+  const subtleChinAnatomy = computeNaturalCharacterAnatomySpec({ ...clerkDefaults, headShape: 'chibi_block' });
+  const chinNorm: [number, number, number] = [0, -0.45 / Math.hypot(0.45, 0.89), 0.89 / Math.hypot(0.45, 0.89)];
+  const prominentChinPos = computeSmoothMandibleVertexDisplacement(chinNorm[0], chinNorm[1], chinNorm[2], prominentChinAnatomy);
+  const subtleChinPos = computeSmoothMandibleVertexDisplacement(chinNorm[0], chinNorm[1], chinNorm[2], subtleChinAnatomy);
+  assert.equal(prominentChinPos[2] > subtleChinPos[2], true, 'Higher chinProminence must project mandible chin forward');
+
+  // 3. Verify BufferGeometry generation and smooth vertex normals
+  const headGeom = buildSmoothSculptedHeadGeometry(baseAnatomy, 64, 48);
+  const headPositions = headGeom.getAttribute('position');
+  const headNormals = headGeom.getAttribute('normal');
+  assert.equal(headPositions.count > 2500, true, 'Smooth sculpted head mesh must be high-resolution (>2500 vertices)');
+  assert.equal(headNormals.count, headPositions.count);
+
+  const jawGeom = buildSmoothSculptedMandibleGeometry(baseAnatomy, 48, 32);
+  const jawPositions = jawGeom.getAttribute('position');
+  const jawNormals = jawGeom.getAttribute('normal');
+  assert.equal(jawPositions.count > 1200, true, 'Smooth sculpted mandible mesh must be high-resolution (>1200 vertices)');
+  assert.equal(jawNormals.count, jawPositions.count);
+
+  // 4. Verify full character group integration and 60fps pose application
+  const charGroup = buildCharacterToonGroup(clerkDefaults, false);
+
+  const headMesh = charGroup.getObjectByName('smoothSculptedHeadMesh');
+  const mandibleMesh = charGroup.getObjectByName('smoothSculptedMandibleMesh');
+  assert.equal(Boolean(headMesh), true, 'Character must include smoothSculptedHeadMesh');
+  assert.equal(Boolean(mandibleMesh), true, 'Character must include smoothSculptedMandibleMesh');
+
+  // Verify facial animation rig pose applies cleanly without error
+  const pose = computeSkeletonPose(1.25, false, 15, true, true, 'idle_observe');
+  const shockedRig = computeFacialRigParams('shocked', undefined, true, 1.25, false, false);
+  applySkeletonPoseToRig(charGroup, pose, shockedRig, { updateBody: true, updateFace: true });
+  assert.equal(Boolean(charGroup.userData.facial?.jawPivot), true);
+  assert.equal(charGroup.userData.facial.jawPivot.rotation.x > 0, true, 'Shocked/talking pose must articulate smooth mandible jawPivot');
+});
+
+test('Subtest 71: Quick Edit Asset Lock Feature — Toggle Lock, Prevent Accidental Movement, Snapping, Rotation & Deletion', async () => {
+  const {
+    isPlacedAssetLocked,
+    getSelectionLockState,
+    toggleSelectedAssetsLock,
+    deleteUnlockedSelectedAssets,
+    moveMultipleAssetsByDelta,
+    snapAssetToClosestSurfaceNow,
+    batchModifySelectedAssets
+  } = await import('./rules');
+
+  const deskAsset: PlacedAsset = {
+    id: 'desk_lock_test',
+    name: 'Mahogany Concierge Desk',
+    category: 'furniture',
+    subType: 'mahogany_desk',
+    floor: 'lobby',
+    position: [2.0, 0.45, -3.0],
+    dimensions: [1.8, 0.9, 0.8],
+    rotationY: 0,
+    color: '#3b2314',
+    textureId: 'oak_parquet',
+    collidable: true
+  };
+
+  const chairAsset: PlacedAsset = {
+    id: 'chair_lock_test',
+    name: 'Swivel Desk Chair',
+    category: 'furniture',
+    subType: 'swivel_chair',
+    floor: 'lobby',
+    position: [2.0, 0.45, -2.0],
+    dimensions: [0.6, 0.9, 0.6],
+    rotationY: 0,
+    color: '#4a181b',
+    textureId: 'velvet_crimson',
+    collidable: true
+  };
+
+  // 1. Initial unlocked state
+  assert.equal(isPlacedAssetLocked(deskAsset), false);
+  const initialLockState = getSelectionLockState([deskAsset, chairAsset], ['desk_lock_test', 'chair_lock_test']);
+  assert.equal(initialLockState.anyLocked, false);
+  assert.equal(initialLockState.allLocked, false);
+  assert.equal(initialLockState.lockedCount, 0);
+  assert.equal(initialLockState.unlockedCount, 2);
+
+  // 2. Lock a single asset via toggleSelectedAssetsLock
+  const lockDeskRes = toggleSelectedAssetsLock([deskAsset, chairAsset], ['desk_lock_test']);
+  assert.equal(lockDeskRes.nextLockedState, true);
+  assert.equal(lockDeskRes.affectedCount, 1);
+  assert.equal(isPlacedAssetLocked(lockDeskRes.updatedAssets[0]), true);
+  assert.equal(isPlacedAssetLocked(lockDeskRes.updatedAssets[1]), false);
+
+  // 3. Mixed selection lock state (1 locked, 1 unlocked)
+  const mixedState = getSelectionLockState(lockDeskRes.updatedAssets, ['desk_lock_test', 'chair_lock_test']);
+  assert.equal(mixedState.anyLocked, true);
+  assert.equal(mixedState.allLocked, false);
+  assert.equal(mixedState.lockedCount, 1);
+  assert.equal(mixedState.unlockedCount, 1);
+
+  // 4. Prevent accidental drag movement on locked asset
+  const afterLockedDrag = moveMultipleAssetsByDelta(
+    lockDeskRes.updatedAssets,
+    ['desk_lock_test'],
+    'desk_lock_test',
+    8.5,
+    4.0
+  );
+  assert.deepEqual(
+    afterLockedDrag[0].position,
+    [2.0, 0.45, -3.0],
+    'Locked asset must not move when dragged'
+  );
+
+  // In a multi-selection drag anchored on the unlocked chair, only the unlocked chair moves while the locked desk stays put
+  const afterMixedDrag = moveMultipleAssetsByDelta(
+    lockDeskRes.updatedAssets,
+    ['desk_lock_test', 'chair_lock_test'],
+    'chair_lock_test',
+    5.0,
+    1.0
+  );
+  assert.deepEqual(
+    afterMixedDrag[0].position,
+    [2.0, 0.45, -3.0],
+    'Locked asset in multi-selection must remain at its original position'
+  );
+  assert.deepEqual(
+    afterMixedDrag[1].position,
+    [5.0, 0.45, 1.0],
+    'Unlocked asset in multi-selection moves normally'
+  );
+
+  // 5. Prevent surface snapping on locked asset
+  const snapAttempt = snapAssetToClosestSurfaceNow(lockDeskRes.updatedAssets, 'desk_lock_test', 0.5);
+  assert.equal(snapAttempt.snappedToName, null);
+  assert.deepEqual(snapAttempt.updatedAssets[0].position, [2.0, 0.45, -3.0]);
+
+  // 6. Prevent rotation on locked asset in batchModifySelectedAssets
+  const afterRotateAttempt = batchModifySelectedAssets(
+    lockDeskRes.updatedAssets,
+    ['desk_lock_test', 'chair_lock_test'],
+    { rotationDeltaY: Math.PI / 2, rotatePivotMode: 'group' }
+  );
+  assert.equal(afterRotateAttempt[0].rotationY, 0, 'Locked asset must not rotate');
+  assert.deepEqual(afterRotateAttempt[0].position, [2.0, 0.45, -3.0], 'Locked asset must not shift during group rotation');
+  assert.equal(Math.abs(afterRotateAttempt[1].rotationY - Math.PI / 2) < 1e-6, true, 'Unlocked asset rotates');
+
+  // 7. Prevent accidental deletion of locked asset
+  const blockedDeleteRes = deleteUnlockedSelectedAssets(lockDeskRes.updatedAssets, ['desk_lock_test']);
+  assert.equal(blockedDeleteRes.deletedCount, 0);
+  assert.equal(blockedDeleteRes.skippedLockedCount, 1);
+  assert.equal(blockedDeleteRes.remainingAssets.length, 2);
+  assert.equal(blockedDeleteRes.message.includes('Locked'), true);
+
+  // 8. Mixed selection delete removes only unlocked asset and preserves locked asset
+  const mixedDeleteRes = deleteUnlockedSelectedAssets(
+    lockDeskRes.updatedAssets,
+    ['desk_lock_test', 'chair_lock_test']
+  );
+  assert.equal(mixedDeleteRes.deletedCount, 1);
+  assert.equal(mixedDeleteRes.skippedLockedCount, 1);
+  assert.equal(mixedDeleteRes.remainingAssets.length, 1);
+  assert.equal(mixedDeleteRes.remainingAssets[0].id, 'desk_lock_test');
+
+  // 9. Unlocking the asset re-enables movement and deletion
+  const unlockDeskRes = toggleSelectedAssetsLock(mixedDeleteRes.remainingAssets, ['desk_lock_test']);
+  assert.equal(unlockDeskRes.nextLockedState, false);
+  assert.equal(isPlacedAssetLocked(unlockDeskRes.updatedAssets[0]), false);
+
+  const finalDeleteRes = deleteUnlockedSelectedAssets(unlockDeskRes.updatedAssets, ['desk_lock_test']);
+  assert.equal(finalDeleteRes.deletedCount, 1);
+  assert.equal(finalDeleteRes.remainingAssets.length, 0);
+});
+
+test('Natural Character Body Sculpting & Bespoke 3D Clothing Studio: 8 clothing styles, procedural outfit choice generator, smooth anatomical torso sculpting, and 3D garment ensembles', async () => {
+  const {
+    CHARACTER_CLOTHING_STYLES,
+    CHARACTER_CLOTHING_PATTERNS,
+    resolveCharacterClothingStyle,
+    resolveCharacterClothingPattern,
+    resolveSecondaryClothingColor,
+    generateCharacterClothingChoices,
+    applyClothingChoiceToAppearance,
+    computeNaturalCharacterAnatomySpec,
+    computeSmoothTorsoVertexDisplacement,
+    getArchetypeDefaults
+  } = await import('./rules');
+  const { buildCharacterToonGroup } = await import('./procedural3D');
+
+  // 1. Verify all 8 clothing styles and 5 fabric patterns are registered
+  assert.equal(CHARACTER_CLOTHING_STYLES.length, 8);
+  assert.equal(CHARACTER_CLOTHING_PATTERNS.length, 5);
+  for (const style of CHARACTER_CLOTHING_STYLES) {
+    assert.equal(Boolean(style.id && style.label && style.description), true);
+    assert.equal(/^#[0-9a-fA-F]{6}$/.test(style.defaultOutfitColor), true);
+    assert.equal(/^#[0-9a-fA-F]{6}$/.test(style.defaultSecondaryColor), true);
+  }
+
+  // 2. Verify archetype clothing defaults and resolvers
+  const bellhopDefaults = getArchetypeDefaults('Night Bellhop');
+  assert.equal(bellhopDefaults.clothingStyle, 'bellhop_brass_tunic');
+  assert.equal(resolveCharacterClothingStyle(bellhopDefaults), 'bellhop_brass_tunic');
+  assert.equal(resolveCharacterClothingPattern(bellhopDefaults), 'solid');
+  assert.equal(resolveSecondaryClothingColor(bellhopDefaults), '#27141a');
+
+  // 3. Verify procedural clothing choice generator produces 4 distinct outfit choices and rotates on variationNonce
+  const baseAppearance = {
+    headShape: 'proportional_human' as const,
+    eyeStyle: 'narrow_suspicious' as const,
+    hairStyle: 'swept_pompadour' as const,
+    mouthStyle: 'slight_smirk' as const,
+    skinColor: '#f3d9c4',
+    hairColor: '#451a03',
+    outfitColor: '#78350f',
+    accentColor: '#eab308',
+    heightScale: 1.0,
+    widthScale: 1.0,
+    headScale: 1.0,
+    archetype: 'Detective Clerk' as const
+  };
+
+  const choicesBatch0 = generateCharacterClothingChoices(baseAppearance, 4, 0);
+  const choicesBatch1 = generateCharacterClothingChoices(baseAppearance, 4, 1);
+  assert.equal(choicesBatch0.length, 4);
+  assert.equal(choicesBatch1.length, 4);
+  assert.notEqual(
+    choicesBatch0[0].id,
+    choicesBatch1[0].id,
+    'Incrementing variationNonce must generate a new lead outfit choice'
+  );
+
+  // Applying a generated choice updates clothingStyle, clothingPattern, outfitColor, secondaryClothingColor, and accentColor
+  const applied = applyClothingChoiceToAppearance(baseAppearance, choicesBatch1[0]);
+  assert.equal(applied.clothingStyle, choicesBatch1[0].clothingStyle);
+  assert.equal(applied.clothingPattern, choicesBatch1[0].clothingPattern);
+  assert.equal(applied.outfitColor, choicesBatch1[0].outfitColor);
+  assert.equal(applied.secondaryClothingColor, choicesBatch1[0].secondaryClothingColor);
+  assert.equal(applied.accentColor, choicesBatch1[0].accentColor);
+
+  // 4. Verify smooth anatomical torso vertex displacement produces natural pectoral projection & sternum valley
+  const anatomy = computeNaturalCharacterAnatomySpec(baseAppearance);
+  const [sternumX, , sternumZ] = computeSmoothTorsoVertexDisplacement(
+    0, // theta = 0 (center front sternum)
+    0.58,
+    'thorax',
+    anatomy,
+    'noir_trench_coat'
+  );
+  const [pecX, , pecZ] = computeSmoothTorsoVertexDisplacement(
+    0.45, // lateral anterior pectoral mound
+    0.58,
+    'thorax',
+    anatomy,
+    'noir_trench_coat'
+  );
+  assert.equal(Math.abs(sternumX) < 1e-6, true);
+  assert.equal(pecX > 0.05, true);
+  assert.equal(
+    pecZ > sternumZ * 0.92,
+    true,
+    'Pectoral contour must maintain forward anatomical volume relative to sternum valley'
+  );
+
+  // 5. Verify 3D character builder constructs sculpted torso meshes and style-specific ensemble groups for all 8 clothing styles
+  for (const styleEntry of CHARACTER_CLOTHING_STYLES) {
+    const group = buildCharacterToonGroup({
+      ...baseAppearance,
+      clothingStyle: styleEntry.id,
+      clothingPattern: styleEntry.defaultPattern,
+      outfitColor: styleEntry.defaultOutfitColor,
+      secondaryClothingColor: styleEntry.defaultSecondaryColor,
+      accentColor: styleEntry.defaultAccentColor
+    });
+    const sculptedThorax = group.getObjectByName('sculptedThoraxMesh');
+    const sculptedPelvis = group.getObjectByName('sculptedPelvisMesh');
+    const ensembleGroup = group.getObjectByName(`clothingEnsemble_${styleEntry.id}`);
+    assert.equal(Boolean(sculptedThorax), true, `Missing sculptedThoraxMesh for ${styleEntry.id}`);
+    assert.equal(Boolean(sculptedPelvis), true, `Missing sculptedPelvisMesh for ${styleEntry.id}`);
+    assert.equal(
+      Boolean(ensembleGroup && ensembleGroup.children.length > 0),
+      true,
+      `Missing 3D clothingEnsemble_${styleEntry.id} children`
+    );
+  }
+});
+
+test('Soundboard Event-to-Sound Trigger Bindings: bind sound effects to hidden door opening, character interacting with specific object, specificity priority, toggle, and removal', async () => {
+  const {
+    SOUNDBOARD_TRIGGER_EVENT_METADATA,
+    DEFAULT_SOUNDBOARD_EVENT_BINDINGS,
+    upsertSoundboardEventBinding,
+    removeSoundboardEventBinding,
+    toggleSoundboardEventBinding,
+    resolveBoundSoundForTriggeredEvent
+  } = await import('./rules');
+
+  // 1. Verify default event metadata and default bindings exist
+  assert.equal(SOUNDBOARD_TRIGGER_EVENT_METADATA.length >= 5, true);
+  assert.equal(
+    SOUNDBOARD_TRIGGER_EVENT_METADATA.some((m) => m.eventType === 'secret_passage_open'),
+    true
+  );
+  assert.equal(
+    SOUNDBOARD_TRIGGER_EVENT_METADATA.some((m) => m.eventType === 'character_object_interact'),
+    true
+  );
+  assert.equal(DEFAULT_SOUNDBOARD_EVENT_BINDINGS.length >= 3, true);
+
+  // 2. Bind a specific sound effect ('steam_pipe') to a specific hidden bookcase door opening ('bookcase_secret_1')
+  const afterSecretDoorBind = upsertSoundboardEventBinding(DEFAULT_SOUNDBOARD_EVENT_BINDINGS, {
+    eventType: 'secret_passage_open',
+    soundPresetId: 'steam_pipe',
+    soundName: 'Basement Steam Pipe Hiss',
+    targetAssetId: 'bookcase_secret_1',
+    targetAssetName: 'Sliding Library Bookcase (LOBBY)'
+  });
+
+  assert.equal(afterSecretDoorBind.binding.soundPresetId, 'steam_pipe');
+  assert.equal(afterSecretDoorBind.binding.targetAssetId, 'bookcase_secret_1');
+  assert.equal(
+    afterSecretDoorBind.updatedBindings.length,
+    DEFAULT_SOUNDBOARD_EVENT_BINDINGS.length + 1
+  );
+
+  // Opening 'bookcase_secret_1' resolves the exact asset-bound sound ('steam_pipe') over the wildcard 'any' default ('door_creak')
+  const exactDoorEval = resolveBoundSoundForTriggeredEvent(afterSecretDoorBind.updatedBindings, {
+    eventType: 'secret_passage_open',
+    asset: { id: 'bookcase_secret_1', name: 'Sliding Library Bookcase' },
+    timestampLabel: '10:15:00 PM'
+  });
+  assert.equal(exactDoorEval.resolvedSoundPresetId, 'steam_pipe');
+  assert.equal(exactDoorEval.matchedBinding?.triggeredCount, 1);
+  assert.equal(exactDoorEval.matchedBinding?.lastTriggeredAt, '10:15:00 PM');
+
+  // Opening a different hidden door ('wainscot_panel_2') falls back to the wildcard 'any' binding ('door_creak')
+  const wildcardDoorEval = resolveBoundSoundForTriggeredEvent(exactDoorEval.updatedBindings, {
+    eventType: 'secret_passage_open',
+    asset: { id: 'wainscot_panel_2', name: 'Secret Wainscot Panel' }
+  });
+  assert.equal(wildcardDoorEval.resolvedSoundPresetId, 'door_creak');
+
+  // 3. Bind a specific sound ('telephone_ring') when character 'agent_eleanor' interacts with 'rotary_phone_lobby'
+  const afterCharObjectBind = upsertSoundboardEventBinding(exactDoorEval.updatedBindings, {
+    eventType: 'character_object_interact',
+    soundPresetId: 'telephone_ring',
+    soundName: 'Rotary Telephone Ring',
+    targetAssetId: 'rotary_phone_lobby',
+    targetAssetName: 'Lobby Rotary Payphone',
+    targetAgentId: 'agent_eleanor',
+    targetAgentName: 'Mrs. Eleanor Vance'
+  });
+
+  // When 'agent_eleanor' interacts with 'rotary_phone_lobby', 'telephone_ring' resolves
+  const charInteractExact = resolveBoundSoundForTriggeredEvent(
+    afterCharObjectBind.updatedBindings,
+    {
+      eventType: 'character_object_interact',
+      asset: { id: 'rotary_phone_lobby', name: 'Lobby Rotary Payphone' },
+      agentId: 'agent_eleanor'
+    }
+  );
+  assert.equal(charInteractExact.resolvedSoundPresetId, 'telephone_ring');
+  assert.equal(charInteractExact.matchedBinding?.triggeredCount, 1);
+
+  // Updating the same (eventType + targetAssetId + targetAgentId) binding updates in-place without duplicating
+  const updatedSameRule = upsertSoundboardEventBinding(charInteractExact.updatedBindings, {
+    eventType: 'character_object_interact',
+    soundPresetId: 'tape_recorder',
+    soundName: 'Reel-to-Reel Tape Click',
+    targetAssetId: 'rotary_phone_lobby',
+    targetAssetName: 'Lobby Rotary Payphone',
+    targetAgentId: 'agent_eleanor',
+    targetAgentName: 'Mrs. Eleanor Vance'
+  });
+  assert.equal(
+    updatedSameRule.updatedBindings.length,
+    charInteractExact.updatedBindings.length,
+    'Upserting existing target tuple must update in-place'
+  );
+  assert.equal(updatedSameRule.binding.soundPresetId, 'tape_recorder');
+
+  // 4. Toggling a binding OFF disables it so resolution falls back to wildcard
+  const toggledOff = toggleSoundboardEventBinding(
+    updatedSameRule.updatedBindings,
+    updatedSameRule.binding.id
+  );
+  const afterToggleEval = resolveBoundSoundForTriggeredEvent(toggledOff, {
+    eventType: 'character_object_interact',
+    asset: { id: 'rotary_phone_lobby', name: 'Lobby Rotary Payphone' },
+    agentId: 'agent_eleanor'
+  });
+  assert.equal(afterToggleEval.resolvedSoundPresetId, 'brass_bell');
+
+  // 5. Removing the binding deletes it from the list
+  const afterRemove = removeSoundboardEventBinding(toggledOff, updatedSameRule.binding.id);
+  assert.equal(afterRemove.some((b) => b.id === updatedSameRule.binding.id), false);
+});
+
+test('Character 3D Hair Style Switching Options: 12 hairstyles, Prev/Next cycling, hair color swatches, and 3D volumetric hair meshes', async () => {
+  const {
+    CHARACTER_HAIR_STYLES,
+    CHARACTER_HAIR_COLOR_SWATCHES,
+    resolveCharacterHairStyle,
+    getCharacterHairStyleMeta,
+    cycleCharacterHairStyle,
+    applyCharacterHairStyleSwitch,
+    getArchetypeDefaults
+  } = await import('./rules');
+  const { buildCharacterToonGroup } = await import('./procedural3D');
+
+  // 1. Verify all 12 hairstyles and 8 hair color swatches are defined with valid hex colors
+  assert.equal(CHARACTER_HAIR_STYLES.length, 12);
+  assert.equal(CHARACTER_HAIR_COLOR_SWATCHES.length, 8);
+  for (const style of CHARACTER_HAIR_STYLES) {
+    assert.equal(Boolean(style.id && style.label && style.shortLabel && style.description), true);
+    assert.equal(/^#[0-9a-fA-F]{6}$/.test(style.defaultHairColor), true);
+  }
+
+  // 2. Verify forward ('next') and backward ('prev') cycling wraps cleanly around all 12 styles
+  const firstStyle = CHARACTER_HAIR_STYLES[0];
+  const lastStyle = CHARACTER_HAIR_STYLES[CHARACTER_HAIR_STYLES.length - 1];
+  assert.equal(cycleCharacterHairStyle(firstStyle.id, 'prev').id, lastStyle.id);
+  assert.equal(cycleCharacterHairStyle(lastStyle.id, 'next').id, firstStyle.id);
+  assert.equal(cycleCharacterHairStyle(firstStyle.id, 'next').id, CHARACTER_HAIR_STYLES[1].id);
+
+  // 3. Verify applyCharacterHairStyleSwitch updates hairStyle and optionally syncs color
+  const baseApp = {
+    headShape: 'proportional_human' as const,
+    eyeStyle: 'narrow_suspicious' as const,
+    hairStyle: 'swept_pompadour' as const,
+    mouthStyle: 'slight_smirk' as const,
+    skinColor: '#f3d9c4',
+    hairColor: '#451a03',
+    outfitColor: '#78350f',
+    accentColor: '#eab308',
+    heightScale: 1.0,
+    widthScale: 1.0,
+    headScale: 1.0,
+    archetype: 'Detective Clerk' as const
+  };
+  const switchedShag = applyCharacterHairStyleSwitch(baseApp, 'feathered_shag_70s', {
+    syncRecommendedColor: true
+  });
+  assert.equal(switchedShag.hairStyle, 'feathered_shag_70s');
+  assert.equal(resolveCharacterHairStyle(switchedShag), 'feathered_shag_70s');
+  assert.equal(
+    switchedShag.hairColor,
+    getCharacterHairStyleMeta('feathered_shag_70s').defaultHairColor
+  );
+
+  // 4. Verify 3D character builder constructs a named hairStyle_<id> group with non-empty 3D children for all 12 hairstyles
+  for (const style of CHARACTER_HAIR_STYLES) {
+    const group = buildCharacterToonGroup({
+      ...baseApp,
+      hairStyle: style.id,
+      hairColor: style.defaultHairColor
+    });
+    const hairGroup = group.getObjectByName(`hairStyle_${style.id}`);
+    assert.equal(
+      Boolean(hairGroup && hairGroup.children.length >= 3),
+      true,
+      `Expected hairStyle_${style.id} 3D group to exist with >= 3 children`
+    );
+  }
+});
+
+
+
+
+
+
 

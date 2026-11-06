@@ -107,6 +107,7 @@ export interface PlacedAsset {
   prevLightColorHex?: string;
   prevEmissionIntensity?: number;
   lightingTransitionStartMs?: number;
+  isLocked?: boolean;
 }
 
 export type InvisibleTriggerEventType =
@@ -272,6 +273,65 @@ export interface CharacterVoiceProfile {
   persistAcrossPlaythrough: boolean;
 }
 
+export type CharacterClothingStyleId =
+  | 'noir_trench_coat'
+  | 'tailored_three_piece'
+  | 'bellhop_brass_tunic'
+  | 'ribbed_turtleneck_blazer'
+  | 'velvet_evening_ensemble'
+  | 'knitted_cardigan_shawl'
+  | 'rolled_sleeve_waistcoat'
+  | 'boiler_utility_jacket';
+
+export type CharacterClothingPattern =
+  | 'solid'
+  | 'herringbone'
+  | 'pinstripe'
+  | 'plaid'
+  | 'ribbed_knit';
+
+export interface CharacterClothingChoiceSpec {
+  id: string;
+  title: string;
+  subtitle: string;
+  clothingStyle: CharacterClothingStyleId;
+  clothingPattern: CharacterClothingPattern;
+  outfitColor: string;
+  secondaryClothingColor: string;
+  accentColor: string;
+  eraBadge: string;
+}
+
+export type CharacterHairStyleId =
+  | 'swept_pompadour'
+  | 'slicked_side_part'
+  | 'messy_curls'
+  | 'bob_cut'
+  | 'feathered_shag_70s'
+  | 'wavy_shoulder_cascade'
+  | 'braided_crown_chignon'
+  | 'silver_bun'
+  | 'permed_silver'
+  | 'cropped_buzz_fade'
+  | 'bowler_hat'
+  | 'noir_fedora';
+
+export interface CharacterHairStyleMetadata {
+  id: CharacterHairStyleId;
+  label: string;
+  shortLabel: string;
+  category: 'short_tailored' | 'medium_textured' | 'updo_long' | 'vintage_headwear';
+  description: string;
+  defaultHairColor: string;
+  icon: string;
+}
+
+export interface CharacterHairColorSwatch {
+  id: string;
+  label: string;
+  hex: string;
+}
+
 export interface CharacterAppearance {
   archetype: CharacterArchetype;
   headShape: 'chibi_block' | 'rounded_toon' | 'tall_noir' | 'proportional_human';
@@ -282,10 +342,14 @@ export interface CharacterAppearance {
   facialExpression?: FacialExpressionType;
   skinColor: string;
   eyeStyle: 'wide_amber' | 'narrow_suspicious' | 'hollow_glow' | 'button_dark';
-  hairStyle: 'swept_pompadour' | 'messy_curls' | 'bob_cut' | 'bowler_hat' | 'silver_bun' | 'permed_silver';
+  hairStyle: CharacterHairStyleId;
   hairColor: string;
   outfitColor: string;
+  secondaryClothingColor?: string;
   accentColor: string;
+  clothingStyle?: CharacterClothingStyleId;
+  clothingPattern?: CharacterClothingPattern;
+  customClothingLabel?: string;
   mouthStyle: 'slight_smirk' | 'nervous_frown' | 'stitched_grin' | 'calm_neutral';
   heightScale: number;
   widthScale: number;

@@ -481,7 +481,192 @@ export function computeBuildPlacementPosition(params: {
 }
 
 /**
+ * Pure helper returning whether a PlacedAsset is locked against movement or deletion.
+ */
+export function isPlacedAssetLocked(
+  asset: Pick<PlacedAsset, 'isLocked'> | null | undefined
+): boolean {
+  return Boolean(asset?.isLocked);
+}
+
+/**
+ * Computes the lock status summary for the currently selected asset(s).
+ */
+export function getSelectionLockState(
+  assets: ReadonlyArray<PlacedAsset>,
+  selectedIds: ReadonlyArray<string>,
+  primaryId?: string | null
+): {
+  anyLocked: boolean;
+  allLocked: boolean;
+  lockedCount: number;
+  unlockedCount: number;
+  totalSelected: number;
+} {
+  const effectiveIds =
+    selectedIds.length > 0 ? selectedIds : primaryId ? [primaryId] : [];
+  if (effectiveIds.length === 0) {
+    return {
+      anyLocked: false,
+      allLocked: false,
+      lockedCount: 0,
+      unlockedCount: 0,
+      totalSelected: 0
+    };
+  }
+  const idSet = new Set(effectiveIds);
+  const selectedObjs = assets.filter((a) => idSet.has(a.id));
+  if (selectedObjs.length === 0) {
+    return {
+      anyLocked: false,
+      allLocked: false,
+      lockedCount: 0,
+      unlockedCount: 0,
+      totalSelected: 0
+    };
+  }
+  const lockedCount = selectedObjs.filter((a) => Boolean(a.isLocked)).length;
+  const unlockedCount = selectedObjs.length - lockedCount;
+  return {
+    anyLocked: lockedCount > 0,
+    allLocked: lockedCount === selectedObjs.length,
+    lockedCount,
+    unlockedCount,
+    totalSelected: selectedObjs.length
+  };
+}
+
+/**
+ * Pure helper to toggle or set the `isLocked` state on one or multiple selected assets.
+ * When `forceLocked` is omitted, locks all selected assets unless all selected assets are already locked.
+ */
+export function toggleSelectedAssetsLock(
+  assets: PlacedAsset[],
+  selectedIds: string[],
+  forceLocked?: boolean
+): {
+  updatedAssets: PlacedAsset[];
+  nextLockedState: boolean;
+  affectedCount: number;
+  message: string;
+} {
+  if (!Array.isArray(selectedIds) || selectedIds.length === 0) {
+    return {
+      updatedAssets: assets,
+      nextLockedState: false,
+      affectedCount: 0,
+      message: 'Select one or more assets first to lock or unlock.'
+    };
+  }
+  const lockState = getSelectionLockState(assets, selectedIds);
+  if (lockState.totalSelected === 0) {
+    return {
+      updatedAssets: assets,
+      nextLockedState: false,
+      affectedCount: 0,
+      message: 'No matching assets found to lock or unlock.'
+    };
+  }
+  const nextLockedState =
+    typeof forceLocked === 'boolean' ? forceLocked : !lockState.allLocked;
+  const idSet = new Set(selectedIds);
+  const targetAssets = assets.filter((a) => idSet.has(a.id));
+  const primaryName = targetAssets[0]?.name || 'Asset';
+
+  const updatedAssets = assets.map((a) =>
+    idSet.has(a.id) ? { ...a, isLocked: nextLockedState } : a
+  );
+
+  const message =
+    targetAssets.length === 1
+      ? nextLockedState
+        ? `🔒 Locked "${primaryName}" via Quick Edit [F] — Protected against accidental movement or deletion.`
+        : `🔓 Unlocked "${primaryName}" via Quick Edit [F] — Movement and deletion re-enabled.`
+      : nextLockedState
+        ? `🔒 Locked ${targetAssets.length} selected assets via Quick Edit [F] — Protected against accidental movement or deletion.`
+        : `🔓 Unlocked ${targetAssets.length} selected assets via Quick Edit [F] — Movement and deletion re-enabled.`;
+
+  return {
+    updatedAssets,
+    nextLockedState,
+    affectedCount: targetAssets.length,
+    message
+  };
+}
+
+/**
+ * Pure helper that deletes only unlocked assets among `selectedIds`, preserving any asset with `isLocked: true`.
+ */
+export function deleteUnlockedSelectedAssets(
+  assets: PlacedAsset[],
+  selectedIds: string[]
+): {
+  remainingAssets: PlacedAsset[];
+  deletedCount: number;
+  skippedLockedCount: number;
+  deletedIds: string[];
+  lockedIds: string[];
+  message: string;
+} {
+  if (!Array.isArray(selectedIds) || selectedIds.length === 0) {
+    return {
+      remainingAssets: assets,
+      deletedCount: 0,
+      skippedLockedCount: 0,
+      deletedIds: [],
+      lockedIds: [],
+      message: 'No assets selected to delete.'
+    };
+  }
+  const idSet = new Set(selectedIds);
+  const targeted = assets.filter((a) => idSet.has(a.id));
+  const lockedAssets = targeted.filter((a) => Boolean(a.isLocked));
+  const unlockedAssets = targeted.filter((a) => !a.isLocked);
+
+  if (unlockedAssets.length === 0) {
+    const lockedLabel =
+      lockedAssets.length === 1
+        ? `"${lockedAssets[0].name}" is`
+        : `${lockedAssets.length} selected assets are`;
+    return {
+      remainingAssets: assets,
+      deletedCount: 0,
+      skippedLockedCount: lockedAssets.length,
+      deletedIds: [],
+      lockedIds: lockedAssets.map((a) => a.id),
+      message: `🔒 Cannot delete: ${lockedLabel} Locked — Unlock in Quick Edit [F] first to delete.`
+    };
+  }
+
+  const unlockedIdSet = new Set(unlockedAssets.map((a) => a.id));
+  const remainingAssets = assets.filter((a) => !unlockedIdSet.has(a.id));
+
+  let message: string;
+  if (lockedAssets.length > 0) {
+    message = `Deleted ${unlockedAssets.length} unlocked ${
+      unlockedAssets.length === 1 ? 'asset' : 'assets'
+    } (🔒 preserved ${lockedAssets.length} locked ${
+      lockedAssets.length === 1 ? 'asset' : 'assets'
+    }) — Press Ctrl+Z to undo.`;
+  } else if (unlockedAssets.length === 1) {
+    message = `Deleted "${unlockedAssets[0].name}" — Press Ctrl+Z to undo.`;
+  } else {
+    message = `Deleted ${unlockedAssets.length} selected objects — Press Ctrl+Z to undo.`;
+  }
+
+  return {
+    remainingAssets,
+    deletedCount: unlockedAssets.length,
+    skippedLockedCount: lockedAssets.length,
+    deletedIds: unlockedAssets.map((a) => a.id),
+    lockedIds: lockedAssets.map((a) => a.id),
+    message
+  };
+}
+
+/**
  * Pure helper to immediately snap a selected asset flush against the closest surface/wall on its floor.
+ * Respects `isLocked` so locked assets are never moved.
  */
 export function snapAssetToClosestSurfaceNow(
   assets: PlacedAsset[],
@@ -493,7 +678,7 @@ export function snapAssetToClosestSurfaceNow(
   snappedFace: 'north' | 'south' | 'east' | 'west' | null;
 } {
   const target = assets.find((a) => a.id === targetAssetId);
-  if (!target) {
+  if (!target || target.isLocked) {
     return { updatedAssets: assets, snappedToName: null, snappedFace: null };
   }
   const sameFloorAssets = assets.filter((a) => a.floor === target.floor);
@@ -532,6 +717,7 @@ export function snapAssetToClosestSurfaceNow(
  * Pure helper to move one or multiple selected assets simultaneously by the snapped delta of the anchor asset.
  * When surfaceSnap is enabled, the anchor asset aligns flush to the closest wall, surface, or placed asset within snapThreshold.
  * Supports variable snap-to-grid size via `options.gridStep`.
+ * Any asset with `isLocked: true` is protected and will not move.
  */
 export function moveMultipleAssetsByDelta(
   assets: PlacedAsset[],
@@ -546,8 +732,18 @@ export function moveMultipleAssetsByDelta(
   if (!anchor) return assets;
 
   const safeStep = normalizeSnapGridSize(options?.gridStep);
-  const idsToMove = selectedIds.includes(anchorAssetId) ? selectedIds : [anchorAssetId];
-  const idSet = new Set(idsToMove);
+  const rawIdsToMove = selectedIds.includes(anchorAssetId) ? selectedIds : [anchorAssetId];
+  const unlockedIdsToMove = rawIdsToMove.filter((id) => {
+    const obj = assets.find((a) => a.id === id);
+    return Boolean(obj && !obj.isLocked);
+  });
+
+  // If the dragged anchor itself is locked and no unlocked assets are in the selection, block movement completely
+  if (unlockedIdsToMove.length === 0 || anchor.isLocked) {
+    return assets;
+  }
+
+  const idSet = new Set(unlockedIdsToMove);
 
   if (options?.surfaceSnap) {
     const nonSelectedFloorAssets = assets.filter(
@@ -566,7 +762,7 @@ export function moveMultipleAssetsByDelta(
     if (dx === 0 && dz === 0 && snapped.rotationY === anchor.rotationY) return assets;
 
     return assets.map((a) => {
-      if (!idSet.has(a.id)) return a;
+      if (!idSet.has(a.id) || a.isLocked) return a;
       const nextX = Number(
         Math.max(-halfGrid, Math.min(halfGrid, a.position[0] + dx)).toFixed(4)
       );
@@ -586,7 +782,7 @@ export function moveMultipleAssetsByDelta(
   if (dx === 0 && dz === 0) return assets;
 
   return assets.map((a) => {
-    if (!idSet.has(a.id)) return a;
+    if (!idSet.has(a.id) || a.isLocked) return a;
     const nextX = snapToGrid(Math.max(-halfGrid, Math.min(halfGrid, a.position[0] + dx)), safeStep);
     const nextZ = snapToGrid(Math.max(-halfGrid, Math.min(halfGrid, a.position[2] + dz)), safeStep);
     return {
@@ -738,6 +934,7 @@ export function batchModifySelectedAssets(
     lightingPreset?: string;
     customAnimationFps?: number | null;
     customFlickerFps?: number | null;
+    isLocked?: boolean;
   }
 ): PlacedAsset[] {
   const idSet = new Set(selectedIds);
@@ -762,6 +959,7 @@ export function batchModifySelectedAssets(
 
   return assets.map((a) => {
     if (!idSet.has(a.id)) return a;
+    const effectiveLocked = patch.isLocked !== undefined ? patch.isLocked : Boolean(a.isLocked);
     let nextDims: [number, number, number] = [...a.dimensions] as [number, number, number];
     if (patch.dimensions) {
       nextDims = [
@@ -820,7 +1018,7 @@ export function batchModifySelectedAssets(
 
     let nextX = a.position[0];
     let nextZ = a.position[2];
-    if (shouldRotateAsGroup && patch.rotationDeltaY !== undefined) {
+    if (!effectiveLocked && shouldRotateAsGroup && patch.rotationDeltaY !== undefined) {
       const dx = a.position[0] - groupPivot.pivotX;
       const dz = a.position[2] - groupPivot.pivotZ;
       const cosD = Math.cos(patch.rotationDeltaY);
@@ -831,6 +1029,7 @@ export function batchModifySelectedAssets(
 
     return {
       ...a,
+      isLocked: effectiveLocked,
       prevLightColorHex: isLightingPatch ? (a.color || '#fde68a') : a.prevLightColorHex,
       prevEmissionIntensity: isLightingPatch
         ? Number(a.emissionIntensity ?? a.lightIntensity ?? 1.0)
@@ -840,7 +1039,10 @@ export function batchModifySelectedAssets(
       textureId: patch.textureId ?? a.textureId,
       dimensions: nextDims,
       position: [nextX, nextDims[1] / 2, nextZ],
-      rotationY: patch.rotationDeltaY !== undefined ? a.rotationY + patch.rotationDeltaY : a.rotationY,
+      rotationY:
+        !effectiveLocked && patch.rotationDeltaY !== undefined
+          ? a.rotationY + patch.rotationDeltaY
+          : a.rotationY,
       hingeSwingMode: patch.hingeSwingMode ?? a.hingeSwingMode,
       isSecretPassage: patch.isSecretPassage !== undefined ? patch.isSecretPassage : a.isSecretPassage,
       emissionIntensity: patch.emissionIntensity !== undefined ? patch.emissionIntensity : a.emissionIntensity,

@@ -1,6 +1,380 @@
-import { type CharacterAppearance, type CharacterArchetype, type CharacterVoiceProfile, type DailyActionEntry, type FacialExpressionType, type FacialRigParams, type FloorId, type HotelAgentProfile, INITIAL_CLUES, type NaturalCharacterAnatomySpec, type PendingTenantQuestion, type ScheduledActivityGesture, type SkeletonPoseEuler, type TenantDisposition, type TimeOfDayPhase } from './coreTypesAndFloors';
+import {
+  type CharacterAppearance,
+  type CharacterArchetype,
+  type CharacterClothingChoiceSpec,
+  type CharacterClothingPattern,
+  type CharacterClothingStyleId,
+  type CharacterHairColorSwatch,
+  type CharacterHairStyleId,
+  type CharacterHairStyleMetadata,
+  type CharacterVoiceProfile,
+  type DailyActionEntry,
+  type FacialExpressionType,
+  type FacialRigParams,
+  type FloorId,
+  type HotelAgentProfile,
+  INITIAL_CLUES,
+  type NaturalCharacterAnatomySpec,
+  type PendingTenantQuestion,
+  type ScheduledActivityGesture,
+  type SkeletonPoseEuler,
+  type TenantDisposition,
+  type TimeOfDayPhase
+} from './coreTypesAndFloors';
 import { getOrCreateCharacterVoiceProfile, inferVoiceProfileFromArchetypeAndName } from './catalogVoiceAndSets';
 import { getActiveDailyAction } from './characterScheduleSystem';
+
+export interface CharacterClothingStyleEntry {
+  id: CharacterClothingStyleId;
+  label: string;
+  eraBadge: string;
+  description: string;
+  defaultPattern: CharacterClothingPattern;
+  defaultOutfitColor: string;
+  defaultSecondaryColor: string;
+  defaultAccentColor: string;
+  recommendedArchetypes: CharacterArchetype[];
+}
+
+export const CHARACTER_CLOTHING_STYLES: readonly CharacterClothingStyleEntry[] = [
+  {
+    id: 'noir_trench_coat',
+    label: 'Belted Noir Trench Coat',
+    eraBadge: '1932 Rainwear',
+    description: 'Double-breasted storm-flap trench coat with buckled waist belt, shoulder epaulets, and upturned lapel collar.',
+    defaultPattern: 'herringbone',
+    defaultOutfitColor: '#5c4033',
+    defaultSecondaryColor: '#262320',
+    defaultAccentColor: '#d4af37',
+    recommendedArchetypes: ['Detective Clerk', 'Long-Term Resident']
+  },
+  {
+    id: 'tailored_three_piece',
+    label: 'Savile Three-Piece Suit',
+    eraBadge: 'Mayfair Bespoke',
+    description: 'Contoured single-breasted jacket over a buttoned waistcoat, crisp dress shirt collar, and silk necktie.',
+    defaultPattern: 'pinstripe',
+    defaultOutfitColor: '#2b3442',
+    defaultSecondaryColor: '#1f2631',
+    defaultAccentColor: '#c59b27',
+    recommendedArchetypes: ['Detective Clerk', 'Long-Term Resident', 'Occult Archivist']
+  },
+  {
+    id: 'bellhop_brass_tunic',
+    label: 'Grand Hotel Brass Tunic',
+    eraBadge: 'Hospitality Uniform',
+    description: 'Structured high-collar double-row brass button tunic with braided shoulder piping and pleated trousers.',
+    defaultPattern: 'solid',
+    defaultOutfitColor: '#7a1c33',
+    defaultSecondaryColor: '#27141a',
+    defaultAccentColor: '#fbbf24',
+    recommendedArchetypes: ['Night Bellhop']
+  },
+  {
+    id: 'ribbed_turtleneck_blazer',
+    label: 'Archivist Turtleneck & Jacket',
+    eraBadge: 'Scholarly Tweed',
+    description: 'Tweed scholar jacket layered over a fine ribbed high-neck sweater with suede elbow patches.',
+    defaultPattern: 'herringbone',
+    defaultOutfitColor: '#312e58',
+    defaultSecondaryColor: '#1e1b2e',
+    defaultAccentColor: '#38bdf8',
+    recommendedArchetypes: ['Occult Archivist', 'Long-Term Resident']
+  },
+  {
+    id: 'velvet_evening_ensemble',
+    label: 'Draped Velvet Evening Ensemble',
+    eraBadge: 'Soirée Couture',
+    description: 'Plush shawl-lapel velvet smoking jacket with silk cummerbund waist drape and jeweled lapel brooch.',
+    defaultPattern: 'solid',
+    defaultOutfitColor: '#631758',
+    defaultSecondaryColor: '#211324',
+    defaultAccentColor: '#facc15',
+    recommendedArchetypes: ['Eccentric Socialite', 'Elderly Matron']
+  },
+  {
+    id: 'knitted_cardigan_shawl',
+    label: 'Cable-Knit Shawl Cardigan',
+    eraBadge: 'Parlor Comfort',
+    description: 'Thick cable-knit shawl-collar cardigan buttoned over a high pleated blouse and wool trousers.',
+    defaultPattern: 'ribbed_knit',
+    defaultOutfitColor: '#4b5563',
+    defaultSecondaryColor: '#292e37',
+    defaultAccentColor: '#d97706',
+    recommendedArchetypes: ['Elderly Matron', 'Long-Term Resident']
+  },
+  {
+    id: 'rolled_sleeve_waistcoat',
+    label: 'Rolled-Sleeve Detective Vest',
+    eraBadge: 'Late-Shift Desk',
+    description: 'Tailored six-button waistcoat over rolled linen shirtsleeves exposing sculpted forearms and a vintage wristwatch.',
+    defaultPattern: 'plaid',
+    defaultOutfitColor: '#4a3525',
+    defaultSecondaryColor: '#2b211a',
+    defaultAccentColor: '#ca8a04',
+    recommendedArchetypes: ['Detective Clerk', 'Night Bellhop']
+  },
+  {
+    id: 'boiler_utility_jacket',
+    label: 'Heavy Canvas Work Jacket',
+    eraBadge: 'Basement Service',
+    description: 'Rugged chore coat with riveted chest pockets, reinforced forearm cuffs, and heavy canvas work trousers.',
+    defaultPattern: 'solid',
+    defaultOutfitColor: '#36453b',
+    defaultSecondaryColor: '#222925',
+    defaultAccentColor: '#b45309',
+    recommendedArchetypes: ['Long-Term Resident', 'Night Bellhop']
+  }
+] as const;
+
+export const CHARACTER_CLOTHING_PATTERNS: readonly { id: CharacterClothingPattern; label: string }[] = [
+  { id: 'solid', label: 'Fine Twill Weave' },
+  { id: 'herringbone', label: 'Wool Herringbone' },
+  { id: 'pinstripe', label: 'Chalk Pinstripe' },
+  { id: 'plaid', label: 'Glen Tartan Check' },
+  { id: 'ribbed_knit', label: 'Cable & Ribbed Knit' }
+] as const;
+
+export function resolveCharacterClothingStyle(
+  appearance?: Partial<Pick<CharacterAppearance, 'clothingStyle' | 'archetype'>>
+): CharacterClothingStyleId {
+  if (appearance?.clothingStyle) {
+    const valid = CHARACTER_CLOTHING_STYLES.some((s) => s.id === appearance.clothingStyle);
+    if (valid) return appearance.clothingStyle;
+  }
+  switch (appearance?.archetype) {
+    case 'Night Bellhop':
+      return 'bellhop_brass_tunic';
+    case 'Elderly Matron':
+      return 'knitted_cardigan_shawl';
+    case 'Occult Archivist':
+      return 'ribbed_turtleneck_blazer';
+    case 'Eccentric Socialite':
+    case ' eccentric Socialite':
+      return 'velvet_evening_ensemble';
+    case 'Long-Term Resident':
+      return 'tailored_three_piece';
+    case 'Detective Clerk':
+    default:
+      return 'noir_trench_coat';
+  }
+}
+
+export function resolveCharacterClothingPattern(
+  appearance?: Partial<Pick<CharacterAppearance, 'clothingPattern' | 'clothingStyle' | 'archetype'>>
+): CharacterClothingPattern {
+  if (appearance?.clothingPattern) {
+    const valid = CHARACTER_CLOTHING_PATTERNS.some((p) => p.id === appearance.clothingPattern);
+    if (valid) return appearance.clothingPattern;
+  }
+  const styleId = resolveCharacterClothingStyle(appearance);
+  const entry = CHARACTER_CLOTHING_STYLES.find((s) => s.id === styleId);
+  return entry?.defaultPattern || 'herringbone';
+}
+
+export function resolveSecondaryClothingColor(
+  appearance?: Partial<Pick<CharacterAppearance, 'secondaryClothingColor' | 'clothingStyle' | 'archetype'>>
+): string {
+  if (appearance?.secondaryClothingColor && /^#[0-9a-fA-F]{6}$/.test(appearance.secondaryClothingColor)) {
+    return appearance.secondaryClothingColor;
+  }
+  const styleId = resolveCharacterClothingStyle(appearance);
+  const entry = CHARACTER_CLOTHING_STYLES.find((s) => s.id === styleId);
+  return entry?.defaultSecondaryColor || '#242220';
+}
+
+const CURATED_OUTFIT_CHOICE_POOL: readonly Omit<CharacterClothingChoiceSpec, 'id'>[] = [
+  {
+    title: 'Rain-Slicked Gumshoe Trench',
+    subtitle: 'Espresso herringbone storm coat & brass buckle',
+    clothingStyle: 'noir_trench_coat',
+    clothingPattern: 'herringbone',
+    outfitColor: '#5c4033',
+    secondaryClothingColor: '#26211e',
+    accentColor: '#eab308',
+    eraBadge: '1932 Noir'
+  },
+  {
+    title: 'Mayfair Chalk-Stripe Three-Piece',
+    subtitle: 'Midnight navy pinstripe waistcoat & gold tie pin',
+    clothingStyle: 'tailored_three_piece',
+    clothingPattern: 'pinstripe',
+    outfitColor: '#1e293b',
+    secondaryClothingColor: '#0f172a',
+    accentColor: '#fbbf24',
+    eraBadge: 'Savile Bespoke'
+  },
+  {
+    title: 'Grand Imperial Bellhop Tunic',
+    subtitle: 'Oxblood wool uniform with twin brass button rows',
+    clothingStyle: 'bellhop_brass_tunic',
+    clothingPattern: 'solid',
+    outfitColor: '#7f1d1d',
+    secondaryClothingColor: '#281317',
+    accentColor: '#facc15',
+    eraBadge: 'Hotel Livery'
+  },
+  {
+    title: 'Esoteric Scholar Tweed & Knit',
+    subtitle: 'Indigo herringbone blazer over charcoal turtleneck',
+    clothingStyle: 'ribbed_turtleneck_blazer',
+    clothingPattern: 'herringbone',
+    outfitColor: '#312e81',
+    secondaryClothingColor: '#1e1b4b',
+    accentColor: '#38bdf8',
+    eraBadge: 'Archive Study'
+  },
+  {
+    title: 'Cabaret Velvet Smoking Jacket',
+    subtitle: 'Plum crushed velvet shawl collar & gilt brooch',
+    clothingStyle: 'velvet_evening_ensemble',
+    clothingPattern: 'solid',
+    outfitColor: '#6b21a8',
+    secondaryClothingColor: '#241434',
+    accentColor: '#fde047',
+    eraBadge: 'Gala Soirée'
+  },
+  {
+    title: 'Hearthside Cable-Knit Shawl',
+    subtitle: 'Heathered slate cardigan over pleated parlor trousers',
+    clothingStyle: 'knitted_cardigan_shawl',
+    clothingPattern: 'ribbed_knit',
+    outfitColor: '#475569',
+    secondaryClothingColor: '#1e293b',
+    accentColor: '#d97706',
+    eraBadge: 'Parlor Knit'
+  },
+  {
+    title: 'After-Hours Rolled-Sleeve Vest',
+    subtitle: 'Glen-plaid waistcoat, rolled linen cuffs & wristwatch',
+    clothingStyle: 'rolled_sleeve_waistcoat',
+    clothingPattern: 'plaid',
+    outfitColor: '#573d28',
+    secondaryClothingColor: '#292019',
+    accentColor: '#ca8a04',
+    eraBadge: 'Night Desk'
+  },
+  {
+    title: 'Sub-Basement Engineer Coat',
+    subtitle: 'Forest canvas utility coat with riveted pockets',
+    clothingStyle: 'boiler_utility_jacket',
+    clothingPattern: 'solid',
+    outfitColor: '#2f4538',
+    secondaryClothingColor: '#1b2620',
+    accentColor: '#ea580c',
+    eraBadge: 'Boiler Crew'
+  },
+  {
+    title: 'Fogbank Slate Trench Coat',
+    subtitle: 'Charcoal storm-flap trench with pewter trim',
+    clothingStyle: 'noir_trench_coat',
+    clothingPattern: 'solid',
+    outfitColor: '#334155',
+    secondaryClothingColor: '#1e293b',
+    accentColor: '#94a3b8',
+    eraBadge: 'Harbor Patrol'
+  },
+  {
+    title: 'Highland Tartan Lounge Suit',
+    subtitle: 'Auburn glen-check three-piece with amber silk tie',
+    clothingStyle: 'tailored_three_piece',
+    clothingPattern: 'plaid',
+    outfitColor: '#653224',
+    secondaryClothingColor: '#2d1a14',
+    accentColor: '#f59e0b',
+    eraBadge: 'Country Club'
+  },
+  {
+    title: 'Emerald Absinthe Evening Coat',
+    subtitle: 'Deep emerald velvet ensemble with champagne sash',
+    clothingStyle: 'velvet_evening_ensemble',
+    clothingPattern: 'solid',
+    outfitColor: '#064e3b',
+    secondaryClothingColor: '#042f2e',
+    accentColor: '#fde68a',
+    eraBadge: 'Salon Couture'
+  },
+  {
+    title: 'Crimson Precinct Waistcoat',
+    subtitle: 'Burgundy pinstripe vest with rolled ivory shirtsleeves',
+    clothingStyle: 'rolled_sleeve_waistcoat',
+    clothingPattern: 'pinstripe',
+    outfitColor: '#691b2b',
+    secondaryClothingColor: '#24171a',
+    accentColor: '#fbbf24',
+    eraBadge: 'Precinct File'
+  }
+];
+
+/**
+ * Generates `count` distinct, era-authentic clothing choices tailored to the character's archetype
+ * and variation seed (`variationNonce`), ensuring varied styles, patterns, and palettes.
+ */
+export function generateCharacterClothingChoices(
+  appearance?: Partial<CharacterAppearance>,
+  count = 4,
+  variationNonce = 0
+): CharacterClothingChoiceSpec[] {
+  const safeCount = Math.max(1, Math.min(8, Math.floor(count)));
+  const currentStyle = resolveCharacterClothingStyle(appearance);
+  const archetype = appearance?.archetype || 'Detective Clerk';
+
+  // Score and rotate the pool deterministically using archetype + variationNonce
+  const total = CURATED_OUTFIT_CHOICE_POOL.length;
+  const archetypeSeed = archetype
+    .split('')
+    .reduce((acc, ch, idx) => acc + ch.charCodeAt(0) * (idx + 3), 0);
+  const startIndex = Math.abs(archetypeSeed + variationNonce * 5) % total;
+
+  const picked: CharacterClothingChoiceSpec[] = [];
+  const usedStyles = new Set<CharacterClothingStyleId>();
+
+  for (let pass = 0; pass < 2 && picked.length < safeCount; pass++) {
+    for (let i = 0; i < total && picked.length < safeCount; i++) {
+      const idx = (startIndex + i * 3 + pass) % total;
+      const candidate = CURATED_OUTFIT_CHOICE_POOL[idx];
+      if (pass === 0) {
+        if (usedStyles.has(candidate.clothingStyle)) continue;
+        if (variationNonce > 0 && picked.length === 0 && candidate.clothingStyle === currentStyle) {
+          continue;
+        }
+      }
+      usedStyles.add(candidate.clothingStyle);
+      picked.push({
+        id: `choice_${variationNonce}_${picked.length}_${candidate.clothingStyle}`,
+        title: candidate.title,
+        subtitle: candidate.subtitle,
+        clothingStyle: candidate.clothingStyle,
+        clothingPattern: candidate.clothingPattern,
+        outfitColor: candidate.outfitColor,
+        secondaryClothingColor: candidate.secondaryClothingColor,
+        accentColor: candidate.accentColor,
+        eraBadge: candidate.eraBadge
+      });
+    }
+  }
+
+  return picked;
+}
+
+/**
+ * Applies a selected clothing choice specification to an existing `CharacterAppearance`.
+ */
+export function applyClothingChoiceToAppearance(
+  appearance: CharacterAppearance,
+  choice: CharacterClothingChoiceSpec
+): CharacterAppearance {
+  return {
+    ...appearance,
+    clothingStyle: choice.clothingStyle,
+    clothingPattern: choice.clothingPattern,
+    outfitColor: choice.outfitColor,
+    secondaryClothingColor: choice.secondaryClothingColor,
+    accentColor: choice.accentColor,
+    customClothingLabel: choice.title
+  };
+}
+
 export function computeNaturalCharacterAnatomySpec(
   appearance?: Partial<
     Pick<
@@ -97,6 +471,212 @@ export function computeNaturalCharacterAnatomySpec(
     hipFlareRatio,
     neckSlenderRatio
   };
+}
+
+/**
+ * Pure smooth C-infinity Gaussian & polynomial vertex displacement field for sculpting a single,
+ * continuous, natural human craniofacial mesh from a unit sphere normal `(nx, ny, nz)`.
+ * Eliminates harsh primitive intersection seams by organically blending the forehead, supraorbital brow arch,
+ * recessed orbital eye sockets, continuous nasal bridge & tip, zygomatic cheekbones, sub-malar taper,
+ * and philtrum dimple into one smooth surface.
+ */
+export function computeSmoothFacialVertexDisplacement(
+  nx: number,
+  ny: number,
+  nz: number,
+  anatomy: NaturalCharacterAnatomySpec
+): [number, number, number] {
+  const len = Math.hypot(nx, ny, nz) || 1;
+  const ux = nx / len;
+  const uy = ny / len;
+  const uz = nz / len;
+  const absX = Math.abs(ux);
+
+  // 1. Base ovoid human head radii (in meters, inside headGroup local space)
+  const baseRx = 0.102 * anatomy.craniumWidthRatio;
+  const baseRy = 0.124 * anatomy.craniumHeightRatio;
+  const baseRz = 0.106 * anatomy.craniumDepthRatio;
+
+  // 2. Natural human craniofacial envelope:
+  // A sphere collapses too quickly in the lower hemisphere (uy < 0) where the human maxilla,
+  // cheeks, jawline, and chin actually maintain forward projection and gentle V-line taper.
+  const lowerHemi = uy < 0 ? Math.min(1, -uy) : 0;
+  // Boost horizontal radius in the mid/lower face (-0.82 < uy < -0.10) so cheeks & jaw don't pinch inward
+  const lowerJawFullness =
+    uy < -0.05 && uy > -0.92
+      ? Math.sin(Math.min(1, (-uy - 0.05) / 0.87) * Math.PI) * 0.24
+      : 0;
+
+  const parietalSpread = Math.exp(-Math.pow((uy - 0.28) / 0.36, 2)) * Math.max(0, -uz * 0.4 + 0.5) * 0.045;
+  const templeIndent =
+    Math.exp(-Math.pow((uy - 0.14) / 0.22, 2)) *
+    Math.exp(-Math.pow((uz - 0.45) / 0.32, 2)) *
+    Math.pow(absX, 1.5) *
+    0.036;
+
+  // Smooth V-taper from cheekbones down to the gonial jaw angle and chin
+  const jawTaperFactor = Math.pow(lowerHemi, 1.15) * (1 - 0.72 * anatomy.jawTaperRatio);
+  // Narrow the front chin gracefully so it forms an oval/heart contour rather than a wide box
+  const chinFrontTaper =
+    uy < -0.35 && uz > 0.25
+      ? Math.pow((-uy - 0.35) / 0.65, 1.1) * Math.pow((uz - 0.25) / 0.75, 1.1) * 0.24
+      : 0;
+
+  // Tuck the back of the skull below the occiput (uy < -0.25, uz < 0.1) smoothly into the neck
+  const occipitalNeckTuck =
+    uy < -0.22 && uz < 0.15
+      ? Math.pow((-uy - 0.22) / 0.78, 1.2) * Math.max(0, 0.15 - uz) * 0.32
+      : 0;
+
+  // Gentle anterior lower-face support so the maxilla and chin align naturally behind the nasal tip and vermilion lips
+  const anteriorFacialPlaneBoost =
+    uy < 0 && uz > 0
+      ? Math.sin(Math.min(1, -uy / 0.92) * Math.PI) * Math.pow(uz, 0.95) * 0.0085
+      : 0;
+
+  let vx =
+    ux *
+    baseRx *
+    (1 + parietalSpread - templeIndent + lowerJawFullness) *
+    (1 - jawTaperFactor - chinFrontTaper);
+  let vy = uy * baseRy;
+  let vz = uz * baseRz * (1 - occipitalNeckTuck) + anteriorFacialPlaneBoost;
+
+  // Sculpt anterior facial topography on the front hemisphere (uz > 0.05)
+  if (uz > 0.05) {
+    const frontWeight = Math.min(1, Math.pow(Math.max(0, (uz - 0.05) / 0.95), 1.15));
+
+    // 3. Smooth Frontal Forehead & Supraorbital Brow Arch
+    const foreheadFullness =
+      Math.exp(-Math.pow((uy - 0.44) / 0.28, 2)) *
+      Math.exp(-Math.pow(ux / 0.65, 2)) *
+      0.0042 *
+      frontWeight;
+    const browArchY = 0.21 + 0.025 * Math.sin(Math.min(1, absX / 0.52) * Math.PI);
+    const browRidgeWeight =
+      Math.exp(-Math.pow((uy - browArchY) / 0.082, 2)) *
+      Math.exp(-Math.pow(ux / 0.56, 2)) *
+      (1 - 0.18 * Math.exp(-Math.pow(ux / 0.11, 2)));
+    vz += (foreheadFullness + browRidgeWeight * 0.0045) * frontWeight;
+
+    // 4. Deep Smooth Recessed Orbital Eye Sockets (centered at ux ≈ ±0.37, uy ≈ 0.025 -> x ≈ ±0.038, y ≈ 0.138)
+    // Gives a clean recessed orbital pocket so the spherical sclera, iris, and eyelids never get clipped by cheek/socket skin
+    const eyeSocketDx = (absX - 0.37) / 0.215;
+    const eyeSocketDy = (uy - 0.025) / 0.165;
+    const eyeSocketDist2 = eyeSocketDx * eyeSocketDx + eyeSocketDy * eyeSocketDy;
+    const orbitalRecess = Math.exp(-eyeSocketDist2) * 0.0165 * frontWeight;
+    vz -= orbitalRecess;
+
+    // 5. Smooth Continuous Nasal Bridge, Dorsum & Rounded Nasal Tip (along central meridian ux ≈ 0)
+    // Spans from glabella (uy = 0.15) down to nasal tip (uy = -0.25, corresponding to y ≈ 0.104)
+    const noseWidthSigma = uy > -0.10 ? 0.095 : 0.122;
+    const noseLateral = Math.exp(-Math.pow(ux / noseWidthSigma, 2));
+    if (uy > -0.36 && uy < 0.18) {
+      const tNose = (0.15 - uy) / (0.40 * Math.max(0.85, Math.min(1.18, anatomy.noseBridgeLength)));
+      if (tNose > 0 && tNose < 1.15) {
+        const bridgeProfile =
+          tNose <= 0.85
+            ? Math.sin((tNose / 0.85) * (Math.PI * 0.5)) * (0.38 + 0.62 * (tNose / 0.85))
+            : Math.max(0, Math.cos(((tNose - 0.85) / 0.30) * (Math.PI * 0.5)));
+        const noseProj = 0.0175 * anatomy.noseTipProjection * bridgeProfile * noseLateral * frontWeight;
+        vz += noseProj;
+        if (tNose > 0.65 && tNose < 1.05) {
+          vy -= 0.0018 * bridgeProfile * noseLateral * frontWeight;
+        }
+      }
+    }
+
+    // 6. Smooth Zygomatic Cheekbone Fullness & Gentle Buccal Slope (below the orbital rim so it never encroaches on the eyes)
+    const malarDx = (absX - 0.52) / 0.24;
+    const malarDy = (uy - -0.22) / 0.19;
+    const malarWeight = Math.exp(-(malarDx * malarDx + malarDy * malarDy)) * frontWeight;
+    const zygomaticBoost = (anatomy.zygomaticWidthRatio - 0.92) * 0.020 + 0.0032;
+    vx += Math.sign(ux) * malarWeight * zygomaticBoost * 0.55;
+    vz += malarWeight * zygomaticBoost * 0.62;
+
+    // 7. Subtle Maxillary Cushion & Vertical Philtrum Groove (uy ≈ -0.42 to -0.58)
+    const maxillaWeight =
+      Math.exp(-Math.pow((uy - -0.50) / 0.15, 2)) *
+      Math.exp(-Math.pow(ux / 0.32, 2)) *
+      frontWeight;
+    const philtrumGroove =
+      Math.exp(-Math.pow((uy - -0.40) / 0.085, 2)) *
+      Math.exp(-Math.pow(ux / 0.045, 2)) *
+      0.0024 *
+      frontWeight;
+    vz += maxillaWeight * 0.0022 - philtrumGroove;
+
+    // 8. Smooth Integrated Mental Chin Prominence & Labiomental Crease (uy ≈ -0.68 to -0.88)
+    const labiomentalCrease =
+      Math.exp(-Math.pow((uy - -0.64) / 0.075, 2)) *
+      Math.exp(-Math.pow(ux / 0.26, 2)) *
+      0.0032 *
+      frontWeight;
+    const chinBoss =
+      Math.exp(-Math.pow((uy - -0.78) / 0.14, 2)) *
+      Math.exp(-Math.pow(ux / 0.26, 2)) *
+      0.0062 *
+      anatomy.chinProminence *
+      frontWeight;
+    vz += chinBoss - labiomentalCrease;
+  }
+
+  // Offset into headGroup local coordinates (centered at y = 0.135, z = 0.002)
+  return [
+    Number(vx.toFixed(5)),
+    Number((vy + 0.135).toFixed(5)),
+    Number((vz + 0.002).toFixed(5))
+  ];
+}
+
+/**
+ * Pure smooth vertex displacement field for the articulated TMJ mandible & chin (`jawPivot` local space).
+ * Nests seamlessly inside the lower jaw contour at rest so there is zero external crease or bump,
+ * and smoothly extends the chin when the jaw drops during speech or expressions.
+ */
+export function computeSmoothMandibleVertexDisplacement(
+  nx: number,
+  ny: number,
+  nz: number,
+  anatomy: NaturalCharacterAnatomySpec
+): [number, number, number] {
+  const len = Math.hypot(nx, ny, nz) || 1;
+  const ux = nx / len;
+  const uy = ny / len;
+  const uz = nz / len;
+
+  // Compact, smooth lower-chin & mandible cushion in jawPivot space (jawPivot is at y = 0.052, z = 0.048 in headGroup)
+  const jawRx = 0.048 * anatomy.jawTaperRatio;
+  const jawRy = 0.022;
+  const jawRz = 0.036;
+
+  const frontChinNarrowing = uz > 0 ? 1 - 0.38 * Math.pow(uz, 1.35) : 1;
+  let vx = ux * jawRx * frontChinNarrowing;
+  let vy = uy * jawRy;
+  let vz = uz * jawRz;
+
+  // Smooth mental chin prominence at the anterior apex
+  if (uz > 0.2) {
+    const chinWeight =
+      Math.exp(-Math.pow(ux / 0.34, 2)) *
+      Math.exp(-Math.pow((uy - -0.25) / 0.42, 2)) *
+      Math.pow(Math.max(0, (uz - 0.2) / 0.8), 1.3);
+    vz += chinWeight * 0.0065 * anatomy.chinProminence;
+    vy -= chinWeight * 0.0020 * anatomy.chinProminence;
+  }
+
+  if (uz < 0) {
+    vz *= 0.42;
+  }
+  if (uy > 0.2) {
+    vy = 0.2 * jawRy + (uy - 0.2) * jawRy * 0.32;
+  }
+
+  return [
+    Number(vx.toFixed(5)),
+    Number((vy - 0.006).toFixed(5)),
+    Number((vz - 0.004).toFixed(5))
+  ];
 }
 
 /**
@@ -490,16 +1070,16 @@ export function computeSkeletonPose(
   let headY = 0;
 
   let leftClavicleZ = 0;
-  let leftUpperArmX = 0;
-  let leftUpperArmZ = 0.06;
-  let leftForearmX = -0.18;
-  let leftHandZ = 0;
+  let leftUpperArmX = 0.03;
+  let leftUpperArmZ = -0.07;
+  let leftForearmX = -0.14;
+  let leftHandZ = 0.05;
 
   let rightClavicleZ = 0;
-  let rightUpperArmX = 0;
-  let rightUpperArmZ = -0.06;
-  let rightForearmX = -0.18;
-  let rightHandZ = 0;
+  let rightUpperArmX = 0.03;
+  let rightUpperArmZ = 0.07;
+  let rightForearmX = -0.14;
+  let rightHandZ = -0.05;
 
   let leftThighX = 0;
   let leftCalfX = 0;
@@ -788,7 +1368,10 @@ export function getArchetypeDefaults(archetype: CharacterArchetype): Partial<Cha
         hairColor: '#d1d5db',
         skinColor: '#eed8c7',
         outfitColor: '#4b5563',
+        secondaryClothingColor: '#292e37',
         accentColor: '#b45309',
+        clothingStyle: 'knitted_cardigan_shawl',
+        clothingPattern: 'ribbed_knit',
         heightScale: 0.94,
         widthScale: 0.98,
         headScale: 1.0
@@ -806,7 +1389,10 @@ export function getArchetypeDefaults(archetype: CharacterArchetype): Partial<Cha
         hairColor: '#6b7280',
         skinColor: '#ebd5c1',
         outfitColor: '#374151',
+        secondaryClothingColor: '#1f2631',
         accentColor: '#eab308',
+        clothingStyle: 'tailored_three_piece',
+        clothingPattern: 'pinstripe',
         heightScale: 1.0,
         widthScale: 1.0,
         headScale: 1.0
@@ -824,7 +1410,10 @@ export function getArchetypeDefaults(archetype: CharacterArchetype): Partial<Cha
         hairColor: '#1f2937',
         skinColor: '#f5d0b5',
         outfitColor: '#831843',
+        secondaryClothingColor: '#27141a',
         accentColor: '#fbbf24',
+        clothingStyle: 'bellhop_brass_tunic',
+        clothingPattern: 'solid',
         heightScale: 1.04,
         widthScale: 0.96,
         headScale: 1.0
@@ -842,7 +1431,10 @@ export function getArchetypeDefaults(archetype: CharacterArchetype): Partial<Cha
         hairColor: '#1e293b',
         skinColor: '#f1dcd0',
         outfitColor: '#312e81',
+        secondaryClothingColor: '#1e1b2e',
         accentColor: '#38bdf8',
+        clothingStyle: 'ribbed_turtleneck_blazer',
+        clothingPattern: 'herringbone',
         heightScale: 0.98,
         widthScale: 0.95,
         headScale: 1.0
@@ -861,7 +1453,10 @@ export function getArchetypeDefaults(archetype: CharacterArchetype): Partial<Cha
         hairColor: '#b45309',
         skinColor: '#fce7f3',
         outfitColor: '#701a75',
+        secondaryClothingColor: '#211324',
         accentColor: '#facc15',
+        clothingStyle: 'velvet_evening_ensemble',
+        clothingPattern: 'solid',
         heightScale: 1.02,
         widthScale: 0.96,
         headScale: 1.0
@@ -880,11 +1475,352 @@ export function getArchetypeDefaults(archetype: CharacterArchetype): Partial<Cha
         hairColor: '#451a03',
         skinColor: '#f3d9c4',
         outfitColor: '#78350f',
+        secondaryClothingColor: '#262320',
         accentColor: '#eab308',
+        clothingStyle: 'noir_trench_coat',
+        clothingPattern: 'herringbone',
         heightScale: 1.0,
         widthScale: 1.0,
         headScale: 1.0
       };
   }
 }
+
+/**
+ * Pure smooth anatomical torso & pelvis cross-section sculptor.
+ * Given circumferential angle `thetaRad` (0 = +Z front, PI/2 = +X right, PI = -Z back)
+ * and vertical normalized height `vNorm` in [0, 1] for either `'pelvis'`, `'abdomen'`, or `'thorax'`,
+ * returns `[x, yOffset, z]` in character meters so the torso has organic human pectoral/clavicle
+ * contours, sternum valley, latissimus V-taper, scapular back fullness, and natural garment drape
+ * instead of cylindrical tubes with stuck-on spheres.
+ */
+export function computeSmoothTorsoVertexDisplacement(
+  thetaRad: number,
+  vNorm: number,
+  segmentKind: 'pelvis' | 'abdomen' | 'thorax',
+  anatomy: NaturalCharacterAnatomySpec,
+  clothingStyle: CharacterClothingStyleId = 'noir_trench_coat'
+): [number, number, number] {
+  const v = Math.max(0, Math.min(1, vNorm));
+  const sinT = Math.sin(thetaRad); // +X lateral
+  const cosT = Math.cos(thetaRad); // +Z anterior (+1 front, -1 back)
+  const absSin = Math.abs(sinT);
+
+  // Coat fullness modifier based on garment weight
+  const coatBulk =
+    clothingStyle === 'noir_trench_coat' || clothingStyle === 'boiler_utility_jacket'
+      ? 1.045
+      : clothingStyle === 'knitted_cardigan_shawl' || clothingStyle === 'velvet_evening_ensemble'
+      ? 1.03
+      : clothingStyle === 'rolled_sleeve_waistcoat'
+      ? 0.975
+      : 1.0;
+
+  if (segmentKind === 'pelvis') {
+    // Pelvis / hip block: wider laterally (iliac crest), natural gluteal fullness in back (-Z), flatter lower abdomen in front (+Z)
+    const hipCurve = Math.sin(v * Math.PI);
+    const widthRx = (0.146 + 0.018 * hipCurve) * anatomy.hipFlareRatio * coatBulk;
+    const depthRz = (0.102 + 0.014 * hipCurve) * anatomy.hipFlareRatio * coatBulk;
+
+    const gluteBulge =
+      cosT < 0
+        ? Math.pow(-cosT, 1.6) * Math.exp(-Math.pow((v - 0.48) / 0.34, 2)) * 0.022 * anatomy.hipFlareRatio
+        : 0;
+    const gluteCleft =
+      cosT < -0.7
+        ? -Math.exp(-Math.pow(sinT / 0.14, 2)) *
+          Math.exp(-Math.pow((v - 0.42) / 0.3, 2)) *
+          0.008
+        : 0;
+    const anteriorFlat =
+      cosT > 0 ? -Math.pow(cosT, 1.5) * (1 - v * 0.35) * 0.007 : 0;
+
+    // Subtle fabric vertical pleat ripple
+    const fabricDrape = Math.sin(thetaRad * 6) * 0.0018 * (1 - v * 0.5);
+
+    const x = sinT * (widthRx + fabricDrape);
+    const z = cosT * (depthRz + fabricDrape) - gluteBulge - gluteCleft + anteriorFlat;
+    return [x, 0, z];
+  }
+
+  if (segmentKind === 'abdomen') {
+    // Waist to lower ribcage transition: smooth anatomical taper from waist (v=0.35) up to lower ribs (v=1.0)
+    const waistDip = Math.exp(-Math.pow((v - 0.32) / 0.38, 2));
+    const ribFlare = Math.pow(v, 1.35);
+
+    const baseRx =
+      (0.145 * (1 - 0.14 * waistDip) + 0.022 * ribFlare) *
+      anatomy.waistTaperRatio *
+      coatBulk;
+    const baseRz =
+      (0.104 * (1 - 0.12 * waistDip) + 0.014 * ribFlare) *
+      anatomy.waistTaperRatio *
+      coatBulk;
+
+    // Lumbar lordosis curve (slight inward curve at lower back, slight abdominal contour in front)
+    const lumbarShiftZ = Math.sin(v * Math.PI) * 0.006;
+    // Oblique lateral muscle contour
+    const obliqueContour = Math.pow(absSin, 2.2) * Math.sin(v * Math.PI) * 0.007;
+    // Natural garment gather near waist belt line
+    const beltGather = Math.cos(thetaRad * 8) * Math.exp(-Math.pow((v - 0.25) / 0.22, 2)) * 0.0024;
+
+    const x = sinT * (baseRx + obliqueContour + beltGather);
+    const z = cosT * (baseRz + beltGather) + lumbarShiftZ;
+    return [x, 0, z];
+  }
+
+  // 'thorax' — Upper torso, ribcage, pectorals, sternum valley, scapula, and sloped clavicular/deltoid shoulders
+  const vClamped = Math.max(0, Math.min(1, v));
+  // Smooth V-taper from lower ribs (v=0) up to broad shoulders (v=0.78), then gentle slope into neck base (v=1.0)
+  const shoulderEnvelope =
+    vClamped < 0.82
+      ? Math.sin((vClamped / 0.82) * (Math.PI * 0.5))
+      : 1.0 - Math.pow((vClamped - 0.82) / 0.18, 1.6) * 0.36;
+
+  const widthRx =
+    (0.142 + 0.064 * shoulderEnvelope) * anatomy.shoulderBreadthRatio * coatBulk;
+  const depthRz =
+    (0.104 + 0.024 * Math.sin(vClamped * Math.PI * 0.78)) * coatBulk;
+
+  // Integrated smooth pectoral contour on anterior chest (+Z, v around 0.45..0.76, lateral |sinT| around 0.28..0.68)
+  const isFront = cosT > 0;
+  const pecHeightEnv = Math.exp(-Math.pow((vClamped - 0.58) / 0.23, 2));
+  const pecLatEnv = Math.exp(-Math.pow((absSin - 0.44) / 0.24, 2));
+  const sternumDepression =
+    isFront && absSin < 0.22
+      ? -Math.exp(-Math.pow(absSin / 0.13, 2)) * pecHeightEnv * 0.008
+      : 0;
+  const pectoralProjection =
+    isFront ? Math.pow(cosT, 1.25) * pecHeightEnv * pecLatEnv * 0.018 : 0;
+
+  // Clavicle ridge near top front (v around 0.84)
+  const clavicleRidge =
+    isFront && vClamped > 0.72
+      ? Math.exp(-Math.pow((vClamped - 0.84) / 0.08, 2)) *
+        Math.exp(-Math.pow((absSin - 0.48) / 0.28, 2)) *
+        0.007
+      : 0;
+
+  // Scapular / upper trapezius fullness on posterior back (-Z, v around 0.52..0.82)
+  const isBack = cosT < 0;
+  const scapulaEnv =
+    isBack
+      ? Math.pow(-cosT, 1.3) *
+        Math.exp(-Math.pow((vClamped - 0.64) / 0.25, 2)) *
+        Math.exp(-Math.pow((absSin - 0.42) / 0.26, 2)) *
+        0.014
+      : 0;
+  const thoracicSpineGroove =
+    isBack && absSin < 0.18
+      ? -Math.exp(-Math.pow(absSin / 0.1, 2)) *
+        Math.exp(-Math.pow((vClamped - 0.55) / 0.35, 2)) *
+        0.006
+      : 0;
+
+  // Natural sloped trapezius/shoulder height drop at outer lateral edges near top of thorax
+  const shoulderSlopeY =
+    vClamped > 0.72 ? -Math.pow(absSin, 1.6) * ((vClamped - 0.72) / 0.28) * 0.018 : 0;
+
+  // Subtle vertical tailored seam & drape micro-contour
+  const tailoredDrape = Math.cos(thetaRad * 4) * 0.0022 * Math.sin(vClamped * Math.PI);
+
+  const x = sinT * (widthRx + tailoredDrape);
+  const z =
+    cosT * (depthRz + tailoredDrape) +
+    pectoralProjection +
+    sternumDepression +
+    clavicleRidge -
+    scapulaEnv -
+    thoracicSpineGroove;
+
+  return [x, shoulderSlopeY, z];
+}
+
+/**
+ * Complete catalog of 12 period-authentic 3D Character Hair Styles & Headwear.
+ */
+export const CHARACTER_HAIR_STYLES: readonly CharacterHairStyleMetadata[] = [
+  {
+    id: 'swept_pompadour',
+    label: 'Swept Noir Pompadour',
+    shortLabel: 'Noir Pompadour',
+    category: 'short_tailored',
+    description: 'Voluminous side-swept crest above the forehead hairline with tapered temple sideburns.',
+    defaultHairColor: '#451a03',
+    icon: '💈'
+  },
+  {
+    id: 'slicked_side_part',
+    label: 'Slicked Executive Side-Part',
+    shortLabel: 'Slicked Side-Part',
+    category: 'short_tailored',
+    description: 'Razor-parted 1970s comb-over with smooth pomade sheen and neat temple taper.',
+    defaultHairColor: '#27170c',
+    icon: '🪮'
+  },
+  {
+    id: 'messy_curls',
+    label: 'Tousled Bohemian Curls',
+    shortLabel: 'Bohemian Curls',
+    category: 'medium_textured',
+    description: 'Layered organic ringlets and textured curls framing the crown and temples.',
+    defaultHairColor: '#5c2d16',
+    icon: '🌀'
+  },
+  {
+    id: 'bob_cut',
+    label: 'Chin-Length Pageboy Bob',
+    shortLabel: 'Pageboy Bob',
+    category: 'medium_textured',
+    description: 'Sculpted symmetrical jaw-length bob with a soft feathered upper brow fringe.',
+    defaultHairColor: '#1f2937',
+    icon: '💇'
+  },
+  {
+    id: 'feathered_shag_70s',
+    label: '1978 Feathered Curtain Shag',
+    shortLabel: '78 Feathered Shag',
+    category: 'medium_textured',
+    description: 'Iconic late-1970s center-parted feathered wings with layered shoulder-grazing locks.',
+    defaultHairColor: '#92400e',
+    icon: '✨'
+  },
+  {
+    id: 'wavy_shoulder_cascade',
+    label: 'Sculpted Veronica Waves',
+    shortLabel: 'Veronica Waves',
+    category: 'updo_long',
+    description: 'Flowing S-wave cinema glamour locks cascading smoothly past the collarbones.',
+    defaultHairColor: '#b45309',
+    icon: '🌊'
+  },
+  {
+    id: 'braided_crown_chignon',
+    label: 'Braided Low Chignon & Pin',
+    shortLabel: 'Braided Chignon',
+    category: 'updo_long',
+    description: 'Woven crown braid gathered into a low sculptural nape chignon secured with a brass pin.',
+    defaultHairColor: '#3f2314',
+    icon: '🎀'
+  },
+  {
+    id: 'silver_bun',
+    label: 'Matron High Chignon Bun',
+    shortLabel: 'High Chignon Bun',
+    category: 'updo_long',
+    description: 'Dignified high occipital bun with swept temple waves and ornamental hairpin.',
+    defaultHairColor: '#cbd5e1',
+    icon: '👑'
+  },
+  {
+    id: 'permed_silver',
+    label: 'Bouffant Salon Perm',
+    shortLabel: 'Salon Bouffant',
+    category: 'medium_textured',
+    description: 'Voluminous curled salon bouffant halo with lifted crown silhouette.',
+    defaultHairColor: '#d1d5db',
+    icon: '☁️'
+  },
+  {
+    id: 'cropped_buzz_fade',
+    label: 'Close-Cropped Taper Fade',
+    shortLabel: 'Cropped Fade',
+    category: 'short_tailored',
+    description: 'Clean close-shorn crown with crisp hairline contour and subtle temple fade.',
+    defaultHairColor: '#1c1917',
+    icon: '✂️'
+  },
+  {
+    id: 'bowler_hat',
+    label: 'Tarnished Bowler & Hatband',
+    shortLabel: 'Bowler Derby',
+    category: 'vintage_headwear',
+    description: 'Classic rounded felt bowler derby hat accented with a brass-trimmed grosgrain ribbon.',
+    defaultHairColor: '#3b2314',
+    icon: '🎩'
+  },
+  {
+    id: 'noir_fedora',
+    label: 'Tilted Detective Fedora',
+    shortLabel: 'Noir Fedora',
+    category: 'vintage_headwear',
+    description: 'Pinched-crown 1970s investigative fedora with angled wide brim and silk band.',
+    defaultHairColor: '#3b2314',
+    icon: '🕵️'
+  }
+];
+
+export const CHARACTER_HAIR_COLOR_SWATCHES: readonly CharacterHairColorSwatch[] = [
+  { id: 'raven_black', label: 'Raven Black', hex: '#18181b' },
+  { id: 'espresso_umber', label: 'Espresso Umber', hex: '#3b1d0e' },
+  { id: 'warm_chestnut', label: 'Warm Chestnut', hex: '#78350f' },
+  { id: 'auburn_copper', label: 'Auburn Copper', hex: '#9a3412' },
+  { id: 'honey_blonde', label: 'Honey Blonde', hex: '#d97706' },
+  { id: 'champagne_ash', label: 'Champagne Ash', hex: '#fde68a' },
+  { id: 'salt_and_pepper', label: 'Salt & Pepper', hex: '#64748b' },
+  { id: 'silver_frost', label: 'Silver Frost', hex: '#cbd5e1' }
+];
+
+const VALID_HAIR_STYLE_IDS = new Set<CharacterHairStyleId>(
+  CHARACTER_HAIR_STYLES.map((s) => s.id)
+);
+
+export function resolveCharacterHairStyle(
+  appearance?: Partial<CharacterAppearance> | null
+): CharacterHairStyleId {
+  const candidate = appearance?.hairStyle;
+  if (candidate && VALID_HAIR_STYLE_IDS.has(candidate)) {
+    return candidate;
+  }
+  if (appearance?.archetype === 'Elderly Matron') return 'silver_bun';
+  if (appearance?.archetype === 'Night Bellhop') return 'bowler_hat';
+  if (appearance?.archetype === 'Occult Archivist') return 'bob_cut';
+  if (appearance?.archetype === 'Long-Term Resident') return 'messy_curls';
+  return 'swept_pompadour';
+}
+
+export function getCharacterHairStyleMeta(
+  styleId?: CharacterHairStyleId | string | null
+): CharacterHairStyleMetadata {
+  const found = CHARACTER_HAIR_STYLES.find((s) => s.id === styleId);
+  return found || CHARACTER_HAIR_STYLES[0];
+}
+
+/**
+ * Pure helper to step forward ('next') or backward ('prev') through CHARACTER_HAIR_STYLES.
+ */
+export function cycleCharacterHairStyle(
+  currentStyle?: CharacterHairStyleId | string | null,
+  direction: 'next' | 'prev' = 'next'
+): CharacterHairStyleMetadata {
+  const styles = CHARACTER_HAIR_STYLES;
+  const currentIdx = styles.findIndex((s) => s.id === currentStyle);
+  const safeIdx = currentIdx >= 0 ? currentIdx : 0;
+  const delta = direction === 'prev' ? -1 : 1;
+  const nextIdx = (safeIdx + delta + styles.length) % styles.length;
+  return styles[nextIdx];
+}
+
+/**
+ * Applies a selected hairStyle (and optional hairColor) to a CharacterAppearance object.
+ */
+export function applyCharacterHairStyleSwitch<T extends Partial<CharacterAppearance>>(
+  appearance: T,
+  nextHairStyle: CharacterHairStyleId,
+  options?: { syncRecommendedColor?: boolean; customHairColor?: string }
+): T & { hairStyle: CharacterHairStyleId; hairColor: string } {
+  const meta = getCharacterHairStyleMeta(nextHairStyle);
+  const nextColor =
+    options?.customHairColor ||
+    (options?.syncRecommendedColor
+      ? meta.defaultHairColor
+      : appearance.hairColor || meta.defaultHairColor);
+  return {
+    ...appearance,
+    hairStyle: meta.id,
+    hairColor: nextColor
+  };
+}
+
+
 
